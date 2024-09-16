@@ -1,9 +1,12 @@
 LICENSE
 README.md
-setup.py
+mesh_persist.ini
+pyproject.toml
+db/meshtastic.sql
+src/mesh_persist/db_functions.py
+src/mesh_persist/mesh_persist.py
 src/mesh_persist.egg-info/PKG-INFO
 src/mesh_persist.egg-info/SOURCES.txt
 src/mesh_persist.egg-info/dependency_links.txt
-src/mesh_persist.egg-info/entry_points.txt
 src/mesh_persist.egg-info/requires.txt
 src/mesh_persist.egg-info/top_level.txt

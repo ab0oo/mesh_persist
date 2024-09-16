@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools_scm[toml]>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mesh_persist"
+requires-python = ">=3.11"
+dynamic = ["version"]
+dependencies = [
+	"configparser",
+        "meshtastic",
+        "paho_mqtt",
+	"psycopg2",
+        "tox",
+]
+
+# Enables the usage of setuptools_scm
+[tool.setuptools_scm]
+
+[project.optional-dependencies]
+lint = [
+]
+test = [
+]
+doc = [
+]
+build = [
+]
+dev = [
+    "tox",
+    "mesh_persist[lint]",
+    "mesh_persist[test]",
+    "mesh_persist[doc]",
+    "mesh_persist[build]",
+]

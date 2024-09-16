@@ -1,8 +1,6 @@
 configparser
-meshtastic
 paho_mqtt
 psycopg2
-tox
 
 [build]
 
