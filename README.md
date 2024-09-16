@@ -6,6 +6,14 @@ and persist that data to a well-structured relational database for further analy
 easy to set up and uses standard PiPy python libraries.
 It can be run on a Raspberry Pi to provide a complete, local/disconnected information system
 
+To set up this python project:
+```
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -e .
+```
+
 This project assumes you have a working Postgresql database set up on a reachable host, and have installed the PostGIS
 Spatial Reference addons.  Begin by creating a pair of new users, mesh_ro and mesh_rw, and remember their passwords.
 ```
