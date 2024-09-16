@@ -1,0 +1,9 @@
+LICENSE
+README.md
+setup.py
+src/mesh_persist.egg-info/PKG-INFO
+src/mesh_persist.egg-info/SOURCES.txt
+src/mesh_persist.egg-info/dependency_links.txt
+src/mesh_persist.egg-info/entry_points.txt
+src/mesh_persist.egg-info/requires.txt
+src/mesh_persist.egg-info/top_level.txt

@@ -1,9 +1,25 @@
+from configparser import ConfigParser
 from datetime import datetime as dt
 from meshtastic import mesh_pb2, mqtt_pb2, portnums_pb2, telemetry_pb2
 import paho.mqtt.client as mqtt
 import db_functions as db_functions
 
 last_msg = {}
+
+def load_mqtt_config(filename='mesh_persist.ini', section='mqtt'):
+    parser = ConfigParser()
+    parser.read(filename)
+
+    # get section, default to postgresql
+    config = {}
+    if parser.has_section(section):
+        params = parser.items(section)
+        for param in params:
+            config[param[0]] = param[1]
+    else:
+        raise Exception('Section {0} not found in the {1} file'.format(section, filename))
+
+    return config
 
 def on_message(client, userdata, message, properties=None):
 #    print("Received message "+ str(message.payload)
@@ -67,14 +83,17 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
 def on_subscribe(client, userdata, mid, qos, properties=None):
     print(f"{dt.now()} Subscribed with QoS {qos}")
 
-broker = "localhost"
-broker_port = 1883
+mqtt_config = load_mqtt_config()
+broker = mqtt_config.get("broker")
+broker_port = mqtt_config.get("port")
+broker_user = mqtt_config.get("username")
+broker_pass = mqtt_config.get("password")
 
 client = mqtt.Client(client_id="pytest",
                      transport="tcp",
                      protocol=mqtt.MQTTv311,
                      clean_session=True)
-client.username_pw_set("mesh", "mesh123")
+client.username_pw_set(broker_user, broker_pass)
 client.on_message = on_message
 client.on_connect = on_connect
 client.on_subscribe = on_subscribe

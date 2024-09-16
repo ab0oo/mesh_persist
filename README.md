@@ -19,5 +19,5 @@ echo "$db_host:$db_port:meshtastic:mesh_rw:$rw_pw" >> ~/.pgpass
 sudo -u postgres createuser -s -d -l mesh_rw
 sudo -u postgres -c "alter user mesh_rw with password '${rw_pw}'"
 PGPASSWORD=${rw_pw} createdb -h $db_host -p $db_port -U mesh_rw meshtastic
-psql -h ${db_host} -p ${db_port} -U mesh_rw -f db/meshtastic.sql
+PGPASSWORD=${rw_pw} psql -h ${db_host} -p ${db_port} -U mesh_rw meshtastic -f db/meshtastic.sql
 ```

@@ -1,0 +1,9 @@
+configparser
+meshtastic
+psycopg
+
+[dev]
+check-manifest
+
+[test]
+coverage
