@@ -66,6 +66,7 @@ SET default_table_access_method = heap;
 
 CREATE TABLE public.air_quality_metrics (
     node_id bigint NOT NULL,
+    packet_id bigint NOT NULL,
     toi timestamp with time zone DEFAULT now() NOT NULL,
     pm10_std integer,
     pm25_std integer,
@@ -181,6 +182,7 @@ ALTER TABLE public.current_nodes OWNER TO mesh_rw;
 
 CREATE TABLE public.device_metrics (
     node_id bigint NOT NULL,
+    packet_id bigint NOT NULL,
     toi timestamp with time zone DEFAULT now() NOT NULL,
     battery_level integer,
     voltage double precision,
@@ -198,6 +200,7 @@ ALTER TABLE public.device_metrics OWNER TO mesh_rw;
 
 CREATE TABLE public.environment_metrics (
     node_id bigint NOT NULL,
+    packet_id bigint NOT NULL,
     toi timestamp with time zone DEFAULT now() NOT NULL,
     temperature double precision,
     relative_humidity double precision,
@@ -331,6 +334,7 @@ ALTER TABLE public.nodes OWNER TO mesh_rw;
 
 CREATE TABLE public.power_metrics (
     node_id bigint NOT NULL,
+    packet_id bigint NOT NULL,
     toi timestamp with time zone DEFAULT now() NOT NULL,
     ch1_voltage double precision,
     ch1_current double precision,

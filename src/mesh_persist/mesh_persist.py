@@ -1,12 +1,21 @@
+"""Base mesh_persist class.
+
+This module connects to MQTT and subscribes to a topic/set of topics, and
+persists specific types of messages to the database.
+"""
+import logging
 from configparser import ConfigParser
-from datetime import datetime as dt
-from meshtastic import mesh_pb2, mqtt_pb2, portnums_pb2, telemetry_pb2
+from sys import exit
+
+import db_functions
 import paho.mqtt.client as mqtt
-import db_functions as db_functions
+from google.protobuf.message import DecodeError
+from meshtastic import mesh_pb2, mqtt_pb2, portnums_pb2, telemetry_pb2
 
 last_msg = {}
 
-def load_mqtt_config(filename='mesh_persist.ini', section='mqtt'):
+def load_mqtt_config(filename:str="mesh_persist.ini", section:str="mqtt") -> dict:
+    """Reads configfile configuration for mqtt server."""
     parser = ConfigParser()
     parser.read(filename)
 
@@ -17,33 +26,35 @@ def load_mqtt_config(filename='mesh_persist.ini', section='mqtt'):
         for param in params:
             config[param[0]] = param[1]
     else:
-        raise Exception('Section {0} not found in the {1} file'.format(section, filename))
+        err = f"Section {section} not found in the {filename} file"
+        logging.fatal(err)
+        exit(1)
 
     return config
 
-def on_message(client, userdata, message, properties=None):
-#    print("Received message "+ str(message.payload)
+def on_message(client: any, userdata: any, message: any, properties=None) -> None: # noqa: ARG001
+    """Callback function when message received from MQTT server."""
+#    logging.info("Received message "+ str(message.payload)
 #           + " on topic '"+ message.topic
 #           + "' with QOS " + str(message.qos))
     service_envelope = mqtt_pb2.ServiceEnvelope()
     try:
         service_envelope.ParseFromString(message.payload)
         db_functions.insert_mesh_packet(service_envelope)
-    except (google.protobuf.message.DecodeError, Exception) as error:
-        print("Unable to decode protobuf from %s", service_envelope['from'])
+    except (DecodeError, Exception):
+        logging.exception("Unable to decode protobuf from %s", service_envelope["from"])
 
     msg_pkt = service_envelope.packet
     toi = msg_pkt.rx_time
     pkt_id = msg_pkt.id
-    source = getattr(msg_pkt, 'from')
-    if source in last_msg.keys():
-        if last_msg[source] == pkt_id:
-            print("dupe")
+    source = getattr(msg_pkt, "from")
+    if source in last_msg and last_msg[source] == pkt_id:
+            logging.debug("dupe")
             return
-    dest = getattr(msg_pkt, 'to')
+    dest = msg_pkt.to
     last_msg[source] = pkt_id
     if not msg_pkt.decoded:
-        print("Encrypted packets not yet handled.")
+        logging.warning("Encrypted packets not yet handled.")
         return
 
     if msg_pkt.decoded.portnum == portnums_pb2.NODEINFO_APP:
@@ -69,35 +80,37 @@ def on_message(client, userdata, message, properties=None):
     if msg_pkt.decoded.portnum == portnums_pb2.ROUTING_APP:
         route = mesh_pb2.Routing()
         route.ParseFromString(msg_pkt.decoded.payload)
-        print(route)
+        logging.debug(route)
 
     if msg_pkt.decoded.portnum == portnums_pb2.TEXT_MESSAGE_APP:
         text_message = msg_pkt.decoded.payload.decode("utf-8")
-        print(text_message)
         db_functions.insert_text_message(source, dest, pkt_id, toi, text_message)
 
-def on_connect(client, userdata, flags, reason_code, properties=None):
-    print("Connected, subscribing...")
+def on_connect(client:any, userdata:any, flags:any, reason_code:any, properties=None) -> None: # noqa: ARG001
+    """Callback function on connection to MQTT server."""
+    logging.info("Connected, subscribing...")
     client.subscribe(topic="msh/2/e/#")
 
-def on_subscribe(client, userdata, mid, qos, properties=None):
-    print(f"{dt.now()} Subscribed with QoS {qos}")
+def on_subscribe(client:any, userdata:any, mid:any, qos:any, properties:None=None) -> None: # noqa: ARG001
+    """Callback function on subscription to topic."""
+    logging.info("Subscribed with QoS %s", qos)
 
-mqtt_config = load_mqtt_config()
-broker = mqtt_config.get("broker")
-broker_port = mqtt_config.get("port")
-broker_user = mqtt_config.get("username")
-broker_pass = mqtt_config.get("password")
+if __name__ == "__main__":
+    mqtt_config = load_mqtt_config()
+    broker = mqtt_config.get("broker")
+    broker_port = mqtt_config.get("port")
+    broker_user = mqtt_config.get("username")
+    broker_pass = mqtt_config.get("password")
 
-client = mqtt.Client(client_id="pytest",
-                     transport="tcp",
-                     protocol=mqtt.MQTTv311,
-                     clean_session=True)
-client.username_pw_set(broker_user, broker_pass)
-client.on_message = on_message
-client.on_connect = on_connect
-client.on_subscribe = on_subscribe
+    client = mqtt.Client(client_id="pytest",
+                        transport="tcp",
+                        protocol=mqtt.MQTTv311,
+                        clean_session=True)
+    client.username_pw_set(broker_user, broker_pass)
+    client.on_message = on_message
+    client.on_connect = on_connect
+    client.on_subscribe = on_subscribe
 
-client.connect(broker, port=broker_port, keepalive=60)
+    client.connect(broker, port=broker_port, keepalive=60)
 
-client.loop_forever()
+    client.loop_forever()
