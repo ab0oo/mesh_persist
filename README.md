@@ -30,4 +30,5 @@ sudo -u postgres createuser -s -d -l mesh_ro
 sudo -u postgres psql -c "alter user mesh_ro with password '${ro_pw}'"
 PGPASSWORD=${rw_pw} createdb -h $db_host -p $db_port -U mesh_rw meshtastic
 PGPASSWORD=${rw_pw} psql -h ${db_host} -p ${db_port} -U mesh_rw meshtastic -f db/meshtastic.sql
+sed "s/PG_PASSWORD/${pg_rw}/g" mesh_persist.ini.template > mesh_persist.ini
 ```

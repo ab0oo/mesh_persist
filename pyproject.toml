@@ -9,12 +9,15 @@ name = "mesh_persist"
 requires-python = ">=3.11"
 dynamic = ["version"]
 dependencies = [
-	"configparser",
+    "configparser",
     "meshtastic",
     "paho_mqtt",
-	"psycopg2",
+    "psycopg2",
     "tox",
 ]
+
+[project.scripts]
+mesh-persist = "mesh_persist.mesh_persist:main"
 
 # Enables the usage of setuptools_scm
 [tool.setuptools_scm]
@@ -52,6 +55,7 @@ lint.ignore = [
     "ISC001",   # Conflicts with the formatter
     "ANN101",   # "missing-type-self"
     "ANN001",   # missing type annotations in function args
+    "ARG002",   # Unused method argument
     "PT001",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
     "PT004",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
     "PT005",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715

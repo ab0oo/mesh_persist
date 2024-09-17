@@ -2,7 +2,7 @@
 host=localhost
 database=meshtastic
 user=mesh_rw
-password=
+password=PG_PASSWORD
 
 [mqtt]
 broker=10.8.0.1
