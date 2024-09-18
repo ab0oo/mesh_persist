@@ -5,16 +5,16 @@ persists specific types of messages to the database.
 """
 
 import logging
-from configparser import ConfigParser
 import sys
+from configparser import ConfigParser
+from typing import Any
 
+import paho
 import paho.mqtt.client as mqtt
 from google.protobuf.message import DecodeError
 from meshtastic import mesh_pb2, mqtt_pb2, portnums_pb2, telemetry_pb2
 
 from . import db_functions
-
-last_msg = {}
 
 
 class MeshPersist:
@@ -22,7 +22,7 @@ class MeshPersist:
 
     def __init__(self) -> None:
         """Initialization function for MeshPersist."""
-        self.db = None
+        self.last_msg: dict[int, int] = {}
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.DEBUG)
         ch = logging.StreamHandler(sys.stdout)
@@ -30,6 +30,7 @@ class MeshPersist:
         formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
+        self.db = db_functions.DbFunctions(self.logger)
 
     def load_mqtt_config(self, filename: str = "mesh_persist.ini", section: str = "mqtt") -> dict:
         """Reads configfile configuration for mqtt server."""
@@ -45,16 +46,22 @@ class MeshPersist:
         else:
             err = f"Section {section} not found in the {filename} file"
             self.logger.fatal(err)
-            exit(1)
+            sys.exit(1)
 
         return config
 
-    def on_message(self, client: any, userdata: any, message: any, properties=None) -> None:
+    def on_message(  # noqa: C901
+        self,
+        client: paho.mqtt.client.Client,
+        userdata: dict[Any, Any],
+        message: paho.mqtt.client.MQTTMessage,
+        properties=None,
+    ) -> None:
         """Callback function when message received from MQTT server."""
         service_envelope = mqtt_pb2.ServiceEnvelope()
         try:
             service_envelope.ParseFromString(message.payload)
-            self.db.insert_mesh_packet(service_envelope)
+            self.db.insert_mesh_packet(service_envelope=service_envelope)
         except (DecodeError, Exception):
             return
 
@@ -62,51 +69,70 @@ class MeshPersist:
         toi = msg_pkt.rx_time
         pkt_id = msg_pkt.id
         source = getattr(msg_pkt, "from")
-        if source in last_msg and last_msg[source] == pkt_id:
+        if source in self.last_msg and self.last_msg[source] == pkt_id:
             self.logger.debug("dupe")
             return
         dest = msg_pkt.to
-        last_msg[source] = pkt_id
-        if not msg_pkt.decoded:
-            self.logger.warning("Encrypted packets not yet handled.")
+        self.last_msg[source] = pkt_id
+        try:
+            if not msg_pkt.decoded:
+                self.logger.warning("Encrypted packets not yet handled.")
+                return
+            if msg_pkt.decoded.portnum == portnums_pb2.NODEINFO_APP:
+                node_info = mesh_pb2.User()
+                node_info.ParseFromString(msg_pkt.decoded.payload)
+                self.db.insert_nodeinfo(from_node=source, nodeinfo=node_info, toi=toi)
+
+            if msg_pkt.decoded.portnum == portnums_pb2.POSITION_APP:
+                pos = mesh_pb2.Position()
+                pos.ParseFromString(msg_pkt.decoded.payload)
+                self.db.insert_position(from_node=source, pos=pos, toi=toi)
+
+            if msg_pkt.decoded.portnum == portnums_pb2.NEIGHBORINFO_APP:
+                message = mesh_pb2.NeighborInfo()
+                self.db.insert_neighbor_info(from_node=source, neighbor_info=message, rx_time=toi)
+
+            if msg_pkt.decoded.portnum == portnums_pb2.TELEMETRY_APP:
+                tel = telemetry_pb2.Telemetry()
+                tel.ParseFromString(msg_pkt.decoded.payload)
+                self.db.insert_telemetry(from_node=source, packet_id=pkt_id, rx_time=toi, telem=tel)
+
+            if msg_pkt.decoded.portnum == portnums_pb2.ROUTING_APP:
+                route = mesh_pb2.Routing()
+                route.ParseFromString(msg_pkt.decoded.payload)
+                self.logger.debug(route)
+
+            if msg_pkt.decoded.portnum == portnums_pb2.TEXT_MESSAGE_APP:
+                text_message = msg_pkt.decoded.payload.decode("utf-8")
+                self.db.insert_text_message(
+                    from_node=source, to_node=dest, packet_id=pkt_id, rx_time=toi, body=text_message
+                )
+        except (DecodeError, Exception):
+            self.logger.exception("Failed to decode an on air message.  Punting on it.")
             return
-        if msg_pkt.decoded.portnum == portnums_pb2.NODEINFO_APP:
-            node_info = mesh_pb2.User()
-            node_info.ParseFromString(msg_pkt.decoded.payload)
-            self.db.insert_nodeinfo(source, node_info, toi)
 
-        if msg_pkt.decoded.portnum == portnums_pb2.POSITION_APP:
-            pos = mesh_pb2.Position()
-            pos.ParseFromString(msg_pkt.decoded.payload)
-            self.db.insert_position(source, pos, toi)
-
-        if msg_pkt.decoded.portnum == portnums_pb2.NEIGHBORINFO_APP:
-            message = mesh_pb2.NeighborInfo()
-            message.ParseFromString(msg_pkt.decoded.payload)
-            self.db.insert_neighbor_info(source, message.neighbors, toi)
-
-        if msg_pkt.decoded.portnum == portnums_pb2.TELEMETRY_APP:
-            tel = telemetry_pb2.Telemetry()
-            tel.ParseFromString(msg_pkt.decoded.payload)
-            self.db.insert_telemetry(source, pkt_id, toi, tel)
-
-        if msg_pkt.decoded.portnum == portnums_pb2.ROUTING_APP:
-            route = mesh_pb2.Routing()
-            route.ParseFromString(msg_pkt.decoded.payload)
-            self.logger.debug(route)
-
-        if msg_pkt.decoded.portnum == portnums_pb2.TEXT_MESSAGE_APP:
-            text_message = msg_pkt.decoded.payload.decode("utf-8")
-            self.db.insert_text_message(source, dest, pkt_id, toi, text_message)
-
-    def on_connect(self, client: any, userdata: any, flags: any, reason_code: any, properties=None) -> None:
+    def on_connect(
+        self,
+        client: paho.mqtt.client.Client,
+        userdata: dict[Any, Any],
+        flags: paho.mqtt.client.ConnectFlags,
+        reason_code: paho.mqtt.reasoncodes.ReasonCode,
+        properties=None,
+    ) -> None:
         """Callback function on connection to MQTT server."""
         config = client.user_data_get()
         log_msg = "Connected, subscribing to %s...", config.get("topic")
         self.logger.info(log_msg)
         client.subscribe(config.get("topic"))
 
-    def on_subscribe(self, client: any, userdata: any, mid: any, qos: any, properties: None = None) -> None:
+    def on_subscribe(
+        self,
+        client: paho.mqtt.client.Client,
+        userdata: dict[Any, Any],
+        mid: int,
+        qos: tuple[int, ...],
+        properties: None = None,
+    ) -> None:
         """Callback function on subscription to topic."""
         self.logger.info("Subscribed with QoS %s", qos)
 
@@ -119,8 +145,8 @@ class MeshPersist:
         self.logger.info("Starting mesh-persist.")
         self.logger.debug("Loading MQTT config")
         mqtt_config = self.load_mqtt_config()
-        broker = mqtt_config.get("broker")
-        broker_port = int(mqtt_config.get("port"))
+        broker = str(mqtt_config.get("broker"))
+        broker_port = int(str(mqtt_config.get("port")))
         broker_user = mqtt_config.get("user")
         broker_pass = mqtt_config.get("pass")
 

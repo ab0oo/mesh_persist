@@ -10,7 +10,7 @@ import time
 import traceback
 
 import psycopg2
-from meshtastic import config_pb2, mesh_pb2, portnums_pb2  # type: ignore
+from meshtastic import config_pb2, mesh_pb2, mqtt_pb2, portnums_pb2  # type: ignore
 
 
 def hex_to_id(node_id) -> int:
@@ -56,13 +56,13 @@ def connect(config: dict):  # noqa: ANN201
 class DbFunctions:
     """Set of Postgres Database functions for the Mesh Persist Meshtastic persister."""
 
-    def __init__(self, logger: any) -> None:
+    def __init__(self, logger: logging.Logger) -> None:
         """Initialization function for db_functions."""
         self.logger = logger
         self.config = load_config()
         self.conn = connect(self.config)
 
-    def insert_mesh_packet(self, service_envelope) -> None:
+    def insert_mesh_packet(self, service_envelope: mqtt_pb2.ServiceEnvelope) -> None:
         """Called for every received packet:  insert the base packet infomation."""
         mp = service_envelope.packet
         pn = mp.decoded.portnum
@@ -108,7 +108,7 @@ class DbFunctions:
             self.logger.exception("Got an error on node_insertion:  ")
             traceback.print_exc()
 
-    def insert_nodeinfo(self, from_node, nodeinfo, toi) -> None:
+    def insert_nodeinfo(self, from_node: str, nodeinfo: mesh_pb2.User, toi: int) -> None:
         """Called for NodeInfo packets, to insert/update existing node info."""
         upsert_sql = """INSERT INTO node_infos (node_id, long_name, short_name,
                         mac_addr, hw_model, role, created_at, updated_at)
@@ -183,7 +183,7 @@ class DbFunctions:
             self.logger.exception("Error altering position info")
             traceback.print_exc()
 
-    def insert_neighbor_info(self, from_node, neighbor_info, rx_time) -> None:
+    def insert_neighbor_info(self, from_node: int, neighbor_info: mesh_pb2.NeighborInfo, rx_time: int) -> None:
         """Inserts Meshtastic NeighborInfo packet data into DB."""
         upsert_sql = """INSERT INTO neighbor_info
                         (id, neighbor_id, snr, update_time)
@@ -212,7 +212,7 @@ class DbFunctions:
                 self.conn.commit()
                 self.logger.debug("Upserted Neighbor Info")
         except (Exception, psycopg2.DatabaseError):
-            self.logger.exception()
+            self.logger.exception("Database Error")
 
     def insert_text_message(self, from_node, to_node, packet_id, rx_time, body) -> None:
         """Inserts meshtastic text messages into db."""
@@ -223,7 +223,7 @@ class DbFunctions:
                 cur.execute(insert_sql, (from_node, to_node, packet_id, rx_time, body))
                 self.conn.commit()
         except (Exception, psycopg2.DatabaseError):
-            self.logger.exception()
+            self.logger.exception("Database Error")
 
     def insert_telemetry(self, from_node, packet_id, rx_time, telem) -> None:
         """Inserts various telemetry data sent via Meshtastic packets.
@@ -265,4 +265,4 @@ class DbFunctions:
                     )
                     self.conn.commit()
             except (Exception, psycopg2.DatabaseError):
-                self.logger.exception()
+                self.logger.exception("Database Error")

@@ -87,6 +87,7 @@ convention = "google"
 [tool.mypy]
 disallow_untyped_defs = false # Functions need to be annotated
 warn_unused_ignores = true
+namespace_packages = true
 exclude = [
     "mesh_persist-\\d+", # Ignore temporary folder created by setuptools when building an sdist
     "venv.*/",
