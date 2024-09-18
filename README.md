@@ -17,8 +17,8 @@ pip install -e .
 This project assumes you have a working Postgresql database set up on a reachable host, and have installed the PostGIS
 Spatial Reference addons.  Begin by creating a pair of new users, mesh_ro and mesh_rw, and remember their passwords.
 ```
-export db_host="localhost"
-export db_port="5432"
+export db_host="localhost" # put the hostname of your Postgres server here
+export db_port="5432" # this is the default postgres port
 export rw_pw=$( date | md5sum | head -c 12)
 sleep 2
 export ro_pw=$( date | md5sum | head -c 12)
@@ -31,4 +31,7 @@ sudo -u postgres psql -c "alter user mesh_ro with password '${ro_pw}'"
 PGPASSWORD=${rw_pw} createdb -h $db_host -p $db_port -U mesh_rw meshtastic
 PGPASSWORD=${rw_pw} psql -h ${db_host} -p ${db_port} -U mesh_rw meshtastic -f db/meshtastic.sql
 sed "s/PG_PASSWORD/${pg_rw}/g" mesh_persist.ini.template > mesh_persist.ini
+sed -i "s/PG_HOST/${db_host}/g" mesh_persist.ini
+set -i "s/PG_PORT/${db_port}/g" mesh_persist.ini
+# EDIT mesh_persist.ini to set your MQTT server information!!
 ```
