@@ -1,5 +1,6 @@
 [postgresql]
-host=localhost
+host=PG_HOST
+port=PG_PORT
 database=meshtastic
 user=mesh_rw
 password=PG_PASSWORD

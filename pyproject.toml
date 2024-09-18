@@ -14,6 +14,7 @@ dependencies = [
     "paho_mqtt",
     "psycopg2",
     "tox",
+    "types-psycopg2",
 ]
 
 [project.scripts]
@@ -60,6 +61,7 @@ lint.ignore = [
     "PT004",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
     "PT005",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
     "PT023",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
+    "PGH003",
 ]
 
 [tool.ruff.lint.per-file-ignores]

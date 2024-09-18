@@ -3,20 +3,14 @@
 This module contains the database functions that store various types of Meshtastic packets to the PostgreSQL database.
 """
 
+import configparser
+import logging
 import sys
 import time
 import traceback
-from configparser import ConfigParser
 
 import psycopg2
-from meshtastic import config_pb2, mesh_pb2, portnums_pb2
-
-
-class ConfigError(Exception):
-    """Internal custom exception.
-
-    Enjoy!
-    """
+from meshtastic import config_pb2, mesh_pb2, portnums_pb2  # type: ignore
 
 
 def hex_to_id(node_id) -> int:
@@ -32,23 +26,24 @@ def id_to_hex(node_id) -> str:
 
 def load_config(filename: str = "mesh_persist.ini", section: str = "postgresql") -> dict:
     """Loads database parameters from configfile-style configuration file."""
-    parser = ConfigParser()
-    parser.read(filename)
-
-    # get section, default to postgresql
-    config = {}
-    if parser.has_section(section):
-        params = parser.items(section)
-        for param in params:
-            config[param[0]] = param[1]
-    else:
+    parser = configparser.ConfigParser()
+    try:
+        parser.read(filename)
+        config = {}
+        if parser.has_section(section):
+            params = parser.items(section)
+            for param in params:
+                config[param[0]] = param[1]
+            return config
         err = f"Section {section} not found in the {filename} file"
-        raise ConfigError(err)
+        logging.fatal(err)
+        sys.exit(1)
 
-    return config
+    except configparser.ParsingError:
+        sys.exit(1)
 
 
-def connect(config: dict) -> any:
+def connect(config: dict):  # noqa: ANN201
     """Connect to the PostgreSQL database server."""
     try:
         # connecting to the PostgreSQL server
@@ -60,9 +55,10 @@ def connect(config: dict) -> any:
 
 class DbFunctions:
     """Set of Postgres Database functions for the Mesh Persist Meshtastic persister."""
-    def __init__(self, logging: any) -> None:
+
+    def __init__(self, logger: any) -> None:
         """Initialization function for db_functions."""
-        self.logging = logging
+        self.logger = logger
         self.config = load_config()
         self.conn = connect(self.config)
 
@@ -74,7 +70,7 @@ class DbFunctions:
         source = getattr(mp, "from")
         dest = mp.to
         dbg = id_to_hex(source) + "->" + id_to_hex(dest) + ":  " + portnum
-        self.logging.debug(dbg)
+        self.logger.debug(dbg)
         sql = """INSERT INTO mesh_packets (source, dest, packet_id, channel, rx_snr, rx_rssi,
                 hop_limit, hop_start, portnum, toi, channel_id, gateway_id )
                 VALUES(%s, %s, %s, %s, %s,
@@ -109,7 +105,7 @@ class DbFunctions:
                 # commit the changes to the database
                 self.conn.commit()
         except (Exception, psycopg2.DatabaseError):
-            self.logging.exception("Got an error on node_insertion:  ")
+            self.logger.exception("Got an error on node_insertion:  ")
             traceback.print_exc()
 
     def insert_nodeinfo(self, from_node, nodeinfo, toi) -> None:
@@ -146,10 +142,10 @@ class DbFunctions:
                         from_node,
                     ),
                 )
-                self.logging.debug("NodeInfo upserted")
+                self.logger.debug("NodeInfo upserted")
                 self.conn.commit()
         except (Exception, psycopg2.DatabaseError):
-            self.logging.exception("Exception storing nodeinfo")
+            self.logger.exception("Exception storing nodeinfo")
             traceback.print_exc()
 
     def insert_position(self, from_node, pos, toi) -> None:
@@ -182,9 +178,9 @@ class DbFunctions:
                 )
                 # commit the changes to the database
                 self.conn.commit()
-                self.logging.debug("Upserted position")
+                self.logger.debug("Upserted position")
         except (Exception, psycopg2.DatabaseError):
-            self.logging.exception("Error altering position info")
+            self.logger.exception("Error altering position info")
             traceback.print_exc()
 
     def insert_neighbor_info(self, from_node, neighbor_info, rx_time) -> None:
@@ -214,9 +210,9 @@ class DbFunctions:
                     )
                 # commit the changes to the database
                 self.conn.commit()
-                self.logging.debug("Upserted Neighbor Info")
+                self.logger.debug("Upserted Neighbor Info")
         except (Exception, psycopg2.DatabaseError):
-            self.logging.exception()
+            self.logger.exception()
 
     def insert_text_message(self, from_node, to_node, packet_id, rx_time, body) -> None:
         """Inserts meshtastic text messages into db."""
@@ -227,16 +223,16 @@ class DbFunctions:
                 cur.execute(insert_sql, (from_node, to_node, packet_id, rx_time, body))
                 self.conn.commit()
         except (Exception, psycopg2.DatabaseError):
-            self.logging.exception()
+            self.logger.exception()
 
     def insert_telemetry(self, from_node, packet_id, rx_time, telem) -> None:
         """Inserts various telemetry data sent via Meshtastic packets.
 
         XXX TODO - add additional telemetry types
         """
-        self.logging.debug("Telemetry:")
-        self.logging.debug(telem)
-        self.logging.debug("Inserting now...")
+        self.logger.debug("Telemetry:")
+        self.logger.debug(telem)
+        self.logger.debug("Inserting now...")
         if telem.WhichOneof("variant") == "device_metrics":
             sql = """INSERT INTO device_metrics ( node_id, packet_id, toi, battery_level, voltage,
                     channel_util, air_util_tx, uptime_seconds )
@@ -269,4 +265,4 @@ class DbFunctions:
                     )
                     self.conn.commit()
             except (Exception, psycopg2.DatabaseError):
-                self.logging.exception()
+                self.logger.exception()

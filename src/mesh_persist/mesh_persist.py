@@ -6,7 +6,7 @@ persists specific types of messages to the database.
 
 import logging
 from configparser import ConfigParser
-from sys import exit
+import sys
 
 import paho.mqtt.client as mqtt
 from google.protobuf.message import DecodeError
@@ -16,18 +16,20 @@ from . import db_functions
 
 last_msg = {}
 
+
 class MeshPersist:
     """Main class for the meshtastic MQTT->DB gateway."""
-    def __init__(self)-> None:
+
+    def __init__(self) -> None:
         """Initialization function for MeshPersist."""
         self.db = None
         self.logger = logging.getLogger(__name__)
-        ch = logging.StreamHandler()
+        self.logger.setLevel(logging.DEBUG)
+        ch = logging.StreamHandler(sys.stdout)
         ch.setLevel(logging.DEBUG)
         formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
-
 
     def load_mqtt_config(self, filename: str = "mesh_persist.ini", section: str = "mqtt") -> dict:
         """Reads configfile configuration for mqtt server."""
@@ -47,12 +49,8 @@ class MeshPersist:
 
         return config
 
-
     def on_message(self, client: any, userdata: any, message: any, properties=None) -> None:
         """Callback function when message received from MQTT server."""
-        #    logging.info("Received message "+ str(message.payload)
-        #           + " on topic '"+ message.topic
-        #           + "' with QOS " + str(message.qos))
         service_envelope = mqtt_pb2.ServiceEnvelope()
         try:
             service_envelope.ParseFromString(message.payload)
@@ -72,7 +70,6 @@ class MeshPersist:
         if not msg_pkt.decoded:
             self.logger.warning("Encrypted packets not yet handled.")
             return
-        logging.debug("Incoming packet")
         if msg_pkt.decoded.portnum == portnums_pb2.NODEINFO_APP:
             node_info = mesh_pb2.User()
             node_info.ParseFromString(msg_pkt.decoded.payload)
@@ -102,7 +99,6 @@ class MeshPersist:
             text_message = msg_pkt.decoded.payload.decode("utf-8")
             self.db.insert_text_message(source, dest, pkt_id, toi, text_message)
 
-
     def on_connect(self, client: any, userdata: any, flags: any, reason_code: any, properties=None) -> None:
         """Callback function on connection to MQTT server."""
         config = client.user_data_get()
@@ -110,11 +106,9 @@ class MeshPersist:
         self.logger.info(log_msg)
         client.subscribe(config.get("topic"))
 
-
     def on_subscribe(self, client: any, userdata: any, mid: any, qos: any, properties: None = None) -> None:
         """Callback function on subscription to topic."""
         self.logger.info("Subscribed with QoS %s", qos)
-
 
     def main(self) -> None:
         """Main entry point for mesh_persist.
@@ -133,8 +127,9 @@ class MeshPersist:
         self.db = db_functions.DbFunctions(self.logger)
 
         self.logger.debug("Initializing MQTT connection")
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
-                             transport="tcp", protocol=mqtt.MQTTv311, clean_session=True)
+        client = mqtt.Client(
+            mqtt.CallbackAPIVersion.VERSION2, transport="tcp", protocol=mqtt.MQTTv311, clean_session=True
+        )
         client.username_pw_set(broker_user, broker_pass)
         client.user_data_set(mqtt_config)
         client.on_message = self.on_message
@@ -145,7 +140,9 @@ class MeshPersist:
 
         client.loop_forever()
 
+
 def main() -> None:
     """Main entry point."""
     mp = MeshPersist()
+    mp.logger.info("This is the beginning")
     mp.main()
