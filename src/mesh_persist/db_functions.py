@@ -70,7 +70,7 @@ class DbFunctions:
         source = getattr(mp, "from")
         dest = mp.to
         dbg = id_to_hex(source) + "->" + id_to_hex(dest) + ":  " + portnum
-        self.logger.debug(dbg)
+        self.logger.info(dbg)
         sql = """INSERT INTO mesh_packets (source, dest, packet_id, channel, rx_snr, rx_rssi,
                 hop_limit, hop_start, portnum, toi, channel_id, gateway_id )
                 VALUES(%s, %s, %s, %s, %s,
@@ -142,7 +142,7 @@ class DbFunctions:
                         from_node,
                     ),
                 )
-                self.logger.debug("NodeInfo upserted")
+                self.logger.debug("Upserted nodeinfo")
                 self.conn.commit()
         except (Exception, psycopg2.DatabaseError):
             self.logger.exception("Exception storing nodeinfo")
@@ -194,7 +194,7 @@ class DbFunctions:
                         WHERE neighbor_info.id=%s AND neighbor_info.neighbor_id=%s"""
         try:
             with self.conn.cursor() as cur:
-                for neighbor in neighbor_info:
+                for neighbor in neighbor_info.neighbors:
                     cur.execute(
                         upsert_sql,
                         (
@@ -222,6 +222,7 @@ class DbFunctions:
             with self.conn.cursor() as cur:
                 cur.execute(insert_sql, (from_node, to_node, packet_id, rx_time, body))
                 self.conn.commit()
+                self.logger.debug("Inserted text message")
         except (Exception, psycopg2.DatabaseError):
             self.logger.exception("Database Error")
 
@@ -230,9 +231,6 @@ class DbFunctions:
 
         XXX TODO - add additional telemetry types
         """
-        self.logger.debug("Telemetry:")
-        self.logger.debug(telem)
-        self.logger.debug("Inserting now...")
         if telem.WhichOneof("variant") == "device_metrics":
             sql = """INSERT INTO device_metrics ( node_id, packet_id, toi, battery_level, voltage,
                     channel_util, air_util_tx, uptime_seconds )
@@ -264,5 +262,6 @@ class DbFunctions:
                         ),
                     )
                     self.conn.commit()
+                    self.logger.debug("Inserted telemetry")
             except (Exception, psycopg2.DatabaseError):
                 self.logger.exception("Database Error")

@@ -24,9 +24,9 @@ class MeshPersist:
         """Initialization function for MeshPersist."""
         self.last_msg: dict[int, int] = {}
         self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.INFO)
         ch = logging.StreamHandler(sys.stdout)
-        ch.setLevel(logging.DEBUG)
+        ch.setLevel(logging.INFO)
         formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
@@ -89,8 +89,9 @@ class MeshPersist:
                 self.db.insert_position(from_node=source, pos=pos, toi=toi)
 
             if msg_pkt.decoded.portnum == portnums_pb2.NEIGHBORINFO_APP:
-                message = mesh_pb2.NeighborInfo()
-                self.db.insert_neighbor_info(from_node=source, neighbor_info=message, rx_time=toi)
+                ni = mesh_pb2.NeighborInfo()
+                ni.ParseFromString(msg_pkt.decoded.payload)
+                self.db.insert_neighbor_info(from_node=source, neighbor_info=ni, rx_time=toi)
 
             if msg_pkt.decoded.portnum == portnums_pb2.TELEMETRY_APP:
                 tel = telemetry_pb2.Telemetry()
@@ -170,5 +171,4 @@ class MeshPersist:
 def main() -> None:
     """Main entry point."""
     mp = MeshPersist()
-    mp.logger.info("This is the beginning")
     mp.main()
