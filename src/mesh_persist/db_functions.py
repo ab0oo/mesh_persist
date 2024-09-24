@@ -67,10 +67,7 @@ class DbFunctions:
         mp = service_envelope.packet
         pn = mp.decoded.portnum
         portnum = portnums_pb2.PortNum.Name(pn)
-        source = getattr(mp, "from")
-        dest = mp.to
-        dbg = id_to_hex(source) + "->" + id_to_hex(dest) + ":  " + portnum
-        self.logger.info(dbg)
+
         sql = """INSERT INTO mesh_packets (source, dest, packet_id, channel, rx_snr, rx_rssi,
                 hop_limit, hop_start, portnum, toi, channel_id, gateway_id )
                 VALUES(%s, %s, %s, %s, %s,
@@ -83,7 +80,7 @@ class DbFunctions:
                 if not mp.hop_limit:
                     mp.hop_limit = 0
                 if not mp.rx_time:
-                    mp.rx_time = time.time()
+                    mp.rx_time = int(time.time())
                 # execute the INSERT statement
                 cur.execute(
                     sql,
@@ -91,7 +88,7 @@ class DbFunctions:
                         getattr(mp, "from"),
                         mp.to,
                         mp.id,
-                        8,
+                        0,
                         mp.rx_snr,
                         mp.rx_rssi,
                         mp.hop_limit,

@@ -6,11 +6,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mesh_persist"
+authors = [
+    {name = "John Gorkos", email="ab0oo@ab0oo.net"},
+]
+description = "python to read meshtastic packets from MQTT and persist to PostgreSQL"
+readme = "README.md"
 requires-python = ">=3.11"
 dynamic = ["version"]
 dependencies = [
     "configparser",
-    "meshtastic",
+    "meshtastic>=2.5.0",
     "paho_mqtt",
     "psycopg2",
     "tox",

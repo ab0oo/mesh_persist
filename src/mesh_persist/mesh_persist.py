@@ -4,6 +4,7 @@ This module connects to MQTT and subscribes to a topic/set of topics, and
 persists specific types of messages to the database.
 """
 
+import binascii
 import logging
 import sys
 from configparser import ConfigParser
@@ -50,7 +51,7 @@ class MeshPersist:
 
         return config
 
-    def on_message(  # noqa: C901
+    def on_message(  # noqa: C901, PLR0915
         self,
         client: paho.mqtt.client.Client,
         userdata: dict[Any, Any],
@@ -58,11 +59,14 @@ class MeshPersist:
         properties=None,
     ) -> None:
         """Callback function when message received from MQTT server."""
+        self.logger.info(binascii.hexlify(bytearray(message.payload)))
         service_envelope = mqtt_pb2.ServiceEnvelope()
         try:
-            service_envelope.ParseFromString(message.payload)
+            se = service_envelope.ParseFromString(message.payload)
+            print(se)
             self.db.insert_mesh_packet(service_envelope=service_envelope)
         except (DecodeError, Exception):
+            self.logger.exception("Exception in initial Service Envelope decode")
             return
 
         msg_pkt = service_envelope.packet
@@ -74,6 +78,14 @@ class MeshPersist:
             return
         dest = msg_pkt.to
         self.last_msg[source] = pkt_id
+
+        pn = msg_pkt.decoded.portnum
+        portnum = portnums_pb2.PortNum.Name(pn)
+        dbg = db_functions.id_to_hex(source) + "->" + db_functions.id_to_hex(dest) + ":  " + portnum
+        for k,v in  service_envelope.ListFields():
+            fi = f"{k}->{v}"
+            self.logger.info(fi)
+
         try:
             if not msg_pkt.decoded:
                 self.logger.warning("Encrypted packets not yet handled.")
@@ -108,6 +120,14 @@ class MeshPersist:
                 self.db.insert_text_message(
                     from_node=source, to_node=dest, packet_id=pkt_id, rx_time=toi, body=text_message
                 )
+
+            if msg_pkt.decoded.portnum == portnums_pb2.MAP_REPORT_APP:
+                self.logger.info("Listing fields in service Envelope")
+                self.logger.info(dbg)
+                map_report = mqtt_pb2.MapReport
+                map_report.ParseFromString(msg_pkt.decoded.payload)
+                self.logger.info(map_report)
+
         except (DecodeError, Exception):
             self.logger.exception("Failed to decode an on air message.  Punting on it.")
             return
@@ -122,7 +142,8 @@ class MeshPersist:
     ) -> None:
         """Callback function on connection to MQTT server."""
         config = client.user_data_get()
-        log_msg = "Connected, subscribing to %s...", config.get("topic")
+        topic = config.get("topic")
+        log_msg = f"Connected, subscribing to {topic}..."
         self.logger.info(log_msg)
         client.subscribe(config.get("topic"))
 
