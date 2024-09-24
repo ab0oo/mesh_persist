@@ -4,7 +4,6 @@ This module connects to MQTT and subscribes to a topic/set of topics, and
 persists specific types of messages to the database.
 """
 
-import binascii
 import logging
 import sys
 from configparser import ConfigParser
@@ -13,7 +12,7 @@ from typing import Any
 import paho
 import paho.mqtt.client as mqtt
 from google.protobuf.message import DecodeError
-from meshtastic import mesh_pb2, mqtt_pb2, portnums_pb2, telemetry_pb2
+from meshtastic import mesh_pb2, mqtt_pb2, portnums_pb2, protocols
 
 from . import db_functions
 
@@ -51,7 +50,7 @@ class MeshPersist:
 
         return config
 
-    def on_message(  # noqa: C901, PLR0915
+    def on_message(  # noqa: C901
         self,
         client: paho.mqtt.client.Client,
         userdata: dict[Any, Any],
@@ -59,14 +58,15 @@ class MeshPersist:
         properties=None,
     ) -> None:
         """Callback function when message received from MQTT server."""
-        self.logger.info(binascii.hexlify(bytearray(message.payload)))
         service_envelope = mqtt_pb2.ServiceEnvelope()
-        try:
-            se = service_envelope.ParseFromString(message.payload)
-            print(se)
-            self.db.insert_mesh_packet(service_envelope=service_envelope)
-        except (DecodeError, Exception):
-            self.logger.exception("Exception in initial Service Envelope decode")
+        if service_envelope is not None:
+            try:
+                se = service_envelope.ParseFromString(message.payload)
+                self.db.insert_mesh_packet(service_envelope=service_envelope)
+            except (DecodeError, Exception):
+                self.logger.exception("Exception in initial Service Envelope decode")
+                return
+        else:
             return
 
         msg_pkt = service_envelope.packet
@@ -79,36 +79,36 @@ class MeshPersist:
         dest = msg_pkt.to
         self.last_msg[source] = pkt_id
 
-        pn = msg_pkt.decoded.portnum
-        portnum = portnums_pb2.PortNum.Name(pn)
-        dbg = db_functions.id_to_hex(source) + "->" + db_functions.id_to_hex(dest) + ":  " + portnum
-        for k,v in  service_envelope.ListFields():
-            fi = f"{k}->{v}"
-            self.logger.info(fi)
+        handler = protocols.get(msg_pkt.decoded.portnum)
+        if type(handler) is None:
+            return
+        if handler.protobufFactory is not None:
+            pb = handler.protobufFactory()
+            pb.ParseFromString(msg_pkt.decoded.payload)
+        dbg = (
+            db_functions.id_to_hex(source)
+            + "->"
+            + db_functions.id_to_hex(dest)
+            + ":  "
+            + portnums_pb2.PortNum.Name(msg_pkt.decoded.portnum)
+        )
+        self.logger.info(dbg)
 
         try:
             if not msg_pkt.decoded:
                 self.logger.warning("Encrypted packets not yet handled.")
                 return
             if msg_pkt.decoded.portnum == portnums_pb2.NODEINFO_APP:
-                node_info = mesh_pb2.User()
-                node_info.ParseFromString(msg_pkt.decoded.payload)
-                self.db.insert_nodeinfo(from_node=source, nodeinfo=node_info, toi=toi)
+                self.db.insert_nodeinfo(from_node=source, nodeinfo=pb, toi=toi)
 
             if msg_pkt.decoded.portnum == portnums_pb2.POSITION_APP:
-                pos = mesh_pb2.Position()
-                pos.ParseFromString(msg_pkt.decoded.payload)
-                self.db.insert_position(from_node=source, pos=pos, toi=toi)
+                self.db.insert_position(from_node=source, pos=pb, toi=toi)
 
             if msg_pkt.decoded.portnum == portnums_pb2.NEIGHBORINFO_APP:
-                ni = mesh_pb2.NeighborInfo()
-                ni.ParseFromString(msg_pkt.decoded.payload)
-                self.db.insert_neighbor_info(from_node=source, neighbor_info=ni, rx_time=toi)
+                self.db.insert_neighbor_info(from_node=source, neighbor_info=pb, rx_time=toi)
 
             if msg_pkt.decoded.portnum == portnums_pb2.TELEMETRY_APP:
-                tel = telemetry_pb2.Telemetry()
-                tel.ParseFromString(msg_pkt.decoded.payload)
-                self.db.insert_telemetry(from_node=source, packet_id=pkt_id, rx_time=toi, telem=tel)
+                self.db.insert_telemetry(from_node=source, packet_id=pkt_id, rx_time=toi, telem=pb)
 
             if msg_pkt.decoded.portnum == portnums_pb2.ROUTING_APP:
                 route = mesh_pb2.Routing()
@@ -122,11 +122,8 @@ class MeshPersist:
                 )
 
             if msg_pkt.decoded.portnum == portnums_pb2.MAP_REPORT_APP:
-                self.logger.info("Listing fields in service Envelope")
-                self.logger.info(dbg)
-                map_report = mqtt_pb2.MapReport
+                map_report = mqtt_pb2.MapReport()
                 map_report.ParseFromString(msg_pkt.decoded.payload)
-                self.logger.info(map_report)
 
         except (DecodeError, Exception):
             self.logger.exception("Failed to decode an on air message.  Punting on it.")
