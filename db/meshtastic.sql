@@ -2,8 +2,8 @@
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 15.8 (Debian 15.8-0+deb12u1)
--- Dumped by pg_dump version 15.8 (Debian 15.8-0+deb12u1)
+-- Dumped from database version 16.4 (Debian 16.4-1.pgdg120+1)
+-- Dumped by pg_dump version 16.4 (Debian 16.4-1.pgdg120+1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -86,6 +86,40 @@ CREATE TABLE public.air_quality_metrics (
 ALTER TABLE public.air_quality_metrics OWNER TO mesh_rw;
 
 --
+-- Name: device_metrics; Type: TABLE; Schema: public; Owner: mesh_rw
+--
+
+CREATE TABLE public.device_metrics (
+    node_id bigint NOT NULL,
+    packet_id bigint NOT NULL,
+    toi timestamp with time zone DEFAULT now() NOT NULL,
+    battery_level integer,
+    voltage double precision,
+    channel_util double precision,
+    air_util_tx double precision,
+    uptime_seconds integer
+);
+
+
+ALTER TABLE public.device_metrics OWNER TO mesh_rw;
+
+--
+-- Name: last_device_metrics; Type: VIEW; Schema: public; Owner: mesh_ro
+--
+
+CREATE VIEW public.last_device_metrics AS
+ SELECT DISTINCT ON (node_id) node_id,
+    round((battery_level)::numeric, 2) AS battery_level,
+    round((voltage)::numeric, 2) AS voltage,
+    round((channel_util)::numeric, 2) AS channel_util,
+    round((air_util_tx)::numeric, 2) AS air_util_tx
+   FROM public.device_metrics
+  ORDER BY node_id, toi DESC;
+
+
+ALTER VIEW public.last_device_metrics OWNER TO mesh_ro;
+
+--
 -- Name: mesh_packets; Type: TABLE; Schema: public; Owner: mesh_rw
 --
 
@@ -143,56 +177,46 @@ CREATE TABLE public.node_positions (
 ALTER TABLE public.node_positions OWNER TO mesh_rw;
 
 --
--- Name: current_nodes; Type: VIEW; Schema: public; Owner: mesh_rw
+-- Name: current_nodes; Type: VIEW; Schema: public; Owner: mesh_ro
 --
 
 CREATE VIEW public.current_nodes AS
- SELECT DISTINCT ON (current_nodes.node_id) current_nodes.node_id,
-    current_nodes.long_name,
-    current_nodes.short_name,
-    current_nodes.mac_addr,
-    current_nodes.hw_model,
-    current_nodes.role,
-    current_nodes.latitude,
-    current_nodes.longitude,
-    current_nodes.altitude,
-    current_nodes.geom
+ SELECT DISTINCT ON (node_id) node_id,
+    short_name,
+    long_name,
+    hw_model,
+    role,
+    altitude,
+    latitude,
+    longitude,
+    battery_level,
+    voltage,
+    channel_util,
+    air_util_tx,
+    since
    FROM ( SELECT n.source AS node_id,
-            ni.long_name,
             ni.short_name,
-            ni.mac_addr,
+            ni.long_name,
             ni.hw_model,
             ni.role,
+            np.altitude,
             np.latitude,
             np.longitude,
-            np.altitude,
-            np.geom,
-            np.created_at
-           FROM ((public.mesh_packets n
-             JOIN public.node_infos ni ON ((n.source = ni.node_id)))
-             JOIN public.node_positions np ON ((n.source = np.node_id)))
-          ORDER BY n.source, np.created_at DESC) current_nodes;
+            dm.battery_level,
+            dm.voltage,
+            dm.channel_util,
+            dm.air_util_tx,
+            min((now() - n.toi)) AS since
+           FROM (((public.mesh_packets n
+             LEFT JOIN public.node_infos ni ON ((n.source = ni.node_id)))
+             LEFT JOIN public.node_positions np ON ((n.source = np.node_id)))
+             LEFT JOIN public.last_device_metrics dm ON ((n.source = dm.node_id)))
+          GROUP BY n.source, ni.long_name, ni.short_name, ni.mac_addr, ni.hw_model, ni.role, np.latitude, np.longitude, np.altitude, np.geom, dm.battery_level, dm.voltage, dm.channel_util, dm.air_util_tx
+          ORDER BY n.source, (min((now() - n.toi))) DESC) current_nodes
+  ORDER BY node_id, since DESC;
 
 
-ALTER TABLE public.current_nodes OWNER TO mesh_rw;
-
---
--- Name: device_metrics; Type: TABLE; Schema: public; Owner: mesh_rw
---
-
-CREATE TABLE public.device_metrics (
-    node_id bigint NOT NULL,
-    packet_id bigint NOT NULL,
-    toi timestamp with time zone DEFAULT now() NOT NULL,
-    battery_level integer,
-    voltage double precision,
-    channel_util double precision,
-    air_util_tx double precision,
-    uptime_seconds integer
-);
-
-
-ALTER TABLE public.device_metrics OWNER TO mesh_rw;
+ALTER VIEW public.current_nodes OWNER TO mesh_ro;
 
 --
 -- Name: environment_metrics; Type: TABLE; Schema: public; Owner: mesh_rw
@@ -229,32 +253,32 @@ ALTER TABLE public.environment_metrics OWNER TO mesh_rw;
 --
 
 CREATE VIEW public.last_node_infos AS
- SELECT DISTINCT ON (node_infos.node_id) node_infos.node_id,
-    node_infos.long_name,
-    node_infos.short_name,
-    node_infos.mac_addr,
-    node_infos.hw_model,
-    node_infos.role,
-    node_infos.updated_at
+ SELECT DISTINCT ON (node_id) node_id,
+    long_name,
+    short_name,
+    mac_addr,
+    hw_model,
+    role,
+    updated_at
    FROM public.node_infos
-  ORDER BY node_infos.node_id, node_infos.updated_at DESC;
+  ORDER BY node_id, updated_at DESC;
 
 
-ALTER TABLE public.last_node_infos OWNER TO mesh_rw;
+ALTER VIEW public.last_node_infos OWNER TO mesh_rw;
 
 --
 -- Name: last_position; Type: VIEW; Schema: public; Owner: postgres
 --
 
 CREATE VIEW public.last_position AS
- SELECT DISTINCT ON (node_positions.node_id) node_positions.node_id,
-    node_positions.updated_at,
-    node_positions.geom
+ SELECT DISTINCT ON (node_id) node_id,
+    updated_at,
+    geom
    FROM public.node_positions
-  ORDER BY node_positions.node_id, node_positions.updated_at DESC;
+  ORDER BY node_id, updated_at DESC;
 
 
-ALTER TABLE public.last_position OWNER TO postgres;
+ALTER VIEW public.last_position OWNER TO postgres;
 
 --
 -- Name: local_stats; Type: TABLE; Schema: public; Owner: mesh_rw
@@ -306,27 +330,7 @@ CREATE VIEW public.neighbor_map AS
   ORDER BY (to_hex(i.id));
 
 
-ALTER TABLE public.neighbor_map OWNER TO postgres;
-
---
--- Name: nodes; Type: TABLE; Schema: public; Owner: mesh_rw
---
-
-CREATE TABLE public.nodes (
-    id bigint NOT NULL,
-    packet_id bigint NOT NULL,
-    dest bigint,
-    channel integer NOT NULL,
-    rx_snr integer,
-    rx_rssi integer,
-    hop_limit integer,
-    hop_start integer,
-    portnum character varying,
-    toi timestamp with time zone
-);
-
-
-ALTER TABLE public.nodes OWNER TO mesh_rw;
+ALTER VIEW public.neighbor_map OWNER TO postgres;
 
 --
 -- Name: power_metrics; Type: TABLE; Schema: public; Owner: mesh_rw
@@ -376,7 +380,7 @@ CREATE SEQUENCE public.text_messages_msg_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.text_messages_msg_id_seq OWNER TO mesh_rw;
+ALTER SEQUENCE public.text_messages_msg_id_seq OWNER TO mesh_rw;
 
 --
 -- Name: text_messages_msg_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: mesh_rw
@@ -421,6 +425,20 @@ CREATE UNIQUE INDEX idx_local_stats_uk ON public.local_stats USING btree (node_i
 
 
 --
+-- Name: idx_mesh_packets_toi; Type: INDEX; Schema: public; Owner: mesh_rw
+--
+
+CREATE INDEX idx_mesh_packets_toi ON public.mesh_packets USING btree (toi);
+
+
+--
+-- Name: idx_mesh_packets_uk; Type: INDEX; Schema: public; Owner: mesh_rw
+--
+
+CREATE UNIQUE INDEX idx_mesh_packets_uk ON public.mesh_packets USING btree (source, packet_id, channel);
+
+
+--
 -- Name: idx_neighbor_info_uk; Type: INDEX; Schema: public; Owner: mesh_rw
 --
 
@@ -446,13 +464,6 @@ CREATE UNIQUE INDEX idx_node_positions_uk ON public.node_positions USING btree (
 --
 
 CREATE UNIQUE INDEX idx_nodes_infos_uk ON public.node_infos USING btree (node_id, long_name, short_name);
-
-
---
--- Name: idx_nodes_pk; Type: INDEX; Schema: public; Owner: mesh_rw
---
-
-CREATE INDEX idx_nodes_pk ON public.nodes USING btree (id, packet_id);
 
 
 --
@@ -531,13 +542,6 @@ GRANT SELECT ON TABLE public.neighbor_info TO mesh_ro;
 --
 
 GRANT SELECT ON TABLE public.neighbor_map TO mesh_ro;
-
-
---
--- Name: TABLE nodes; Type: ACL; Schema: public; Owner: mesh_rw
---
-
-GRANT SELECT ON TABLE public.nodes TO mesh_ro;
 
 
 --

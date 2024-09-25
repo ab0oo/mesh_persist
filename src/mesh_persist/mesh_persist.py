@@ -62,7 +62,6 @@ class MeshPersist:
         if service_envelope is not None:
             try:
                 se = service_envelope.ParseFromString(message.payload)
-                self.db.insert_mesh_packet(service_envelope=service_envelope)
             except (DecodeError, Exception):
                 self.logger.exception("Exception in initial Service Envelope decode")
                 return
@@ -70,9 +69,15 @@ class MeshPersist:
             return
 
         msg_pkt = service_envelope.packet
+        portnum = msg_pkt.decoded.portnum
         toi = msg_pkt.rx_time
         pkt_id = msg_pkt.id
         source = getattr(msg_pkt, "from")
+        # we don't care to store map_report msgs, because they are locally generated and
+        # will violate the unique key of the mesh_packets table.  We'll deal with them
+        # separately
+        if portnums_pb2.PortNum.Name(portnum) != "MAP_REPORT_APP":
+            self.db.insert_mesh_packet(service_envelope=service_envelope)
         if source in self.last_msg and self.last_msg[source] == pkt_id:
             self.logger.debug("dupe")
             return
@@ -90,7 +95,7 @@ class MeshPersist:
             + "->"
             + db_functions.id_to_hex(dest)
             + ":  "
-            + portnums_pb2.PortNum.Name(msg_pkt.decoded.portnum)
+            + portnums_pb2.PortNum.Name(portnum)
         )
         self.logger.info(dbg)
 
