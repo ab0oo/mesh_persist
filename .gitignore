@@ -5,4 +5,5 @@ src/mesh_persist.egg-info/
 .ruff_cache/
 build/
 src/mesh_persist/__pycache__/
+src/go
 mesh_persist.ini
