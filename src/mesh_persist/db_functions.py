@@ -108,11 +108,11 @@ class DbFunctions:
     def insert_nodeinfo(self, from_node: str, nodeinfo: mesh_pb2.User, toi: int) -> None:
         """Called for NodeInfo packets, to insert/update existing node info."""
         upsert_sql = """INSERT INTO node_infos (node_id, long_name, short_name,
-                        mac_addr, hw_model, role, created_at, updated_at)
-                        VALUES(%s, %s, %s, %s, %s, %s, to_timestamp(%s), to_timestamp(%s))
+                        mac_addr, hw_model, role, public_key, created_at, updated_at)
+                        VALUES(%s, %s, %s, %s, %s, %s, %s, to_timestamp(%s), to_timestamp(%s))
                         ON CONFLICT (node_id, long_name, short_name)
                         DO UPDATE
-                        SET updated_at=to_timestamp(%s)
+                        SET updated_at=to_timestamp(%s), public_key=%s
                         WHERE node_infos.long_name = %s
                         AND node_infos.short_name = %s
                         AND node_infos.role = %s
@@ -129,10 +129,12 @@ class DbFunctions:
                         nodeinfo.short_name,
                         nodeinfo.macaddr,
                         hw,
+                        nodeinfo.public_key,
                         role,
                         toi,
                         toi,
                         toi,
+                        nodeinfo.public_key,
                         nodeinfo.long_name,
                         nodeinfo.short_name,
                         role,
@@ -156,6 +158,8 @@ class DbFunctions:
                         WHERE node_positions.node_id=%s
                         and node_positions.latitude=%s
                         and node_positions.longitude=%s"""
+        if pos.latitude_i == 0 and pos.longitude_i == 0:
+            return
         try:
             with self.conn.cursor() as cur:
                 cur.execute(

@@ -89,7 +89,11 @@ class MeshPersist:
             return
         if handler.protobufFactory is not None:
             pb = handler.protobufFactory()
-            pb.ParseFromString(msg_pkt.decoded.payload)
+            try:
+                pb.ParseFromString(msg_pkt.decoded.payload)
+            except Exception:
+                self.logger.exception()
+                return
         dbg = (
             db_functions.id_to_hex(source)
             + "->"

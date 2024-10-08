@@ -21,15 +21,17 @@
 # You should have received a copy of the GNU General Public License aling with spi-lora.  If not, see
 # <http://www.gnu.org/licenses/>.
 
+import logging
+import sys
 from configparser import ConfigParser
-from meshtastic import mesh_pb2
-from meshtastic import telemetry_pb2
-from Cryptodome.Cipher import AES
 from time import sleep, time
-from spi_lora.LoRa import *
-from spi_lora.LoRaArgumentParser import LoRaArgumentParser
-from spi_lora.boards.RPi_Adafruit4074 import BOARD
+
 import psycopg2
+from Cryptodome.Cipher import AES
+from meshtastic import mesh_pb2, telemetry_pb2
+from spi_lora.boards.RPi_Adafruit4074 import BOARD
+from spi_lora.LoRa import BW, CODING_RATE, GAIN, MODE
+from spi_lora.LoRaArgumentParser import LoRaArgumentParser
 
 BOARD.setup()
 
@@ -69,91 +71,91 @@ class LoRaRcvCont(LoRa):
         packet_id = int.from_bytes(payload[11:7:-1])
         packet = mesh_pb2.MeshPacket()
         setattr(packet, "from", int.from_bytes(payload[7:3:-1]))
-        setattr(packet, "to", int.from_bytes(payload[3::-1]))
-        setattr(packet, "id", int.from_bytes(payload[11:7:-1]))
-        setattr(packet, "channel", payload[13])
-        setattr(packet, "rx_time", int(time()))
-        setattr(packet, "rx_snr", int(lora.get_pkt_snr_value()))
-        setattr(packet, "rx_rssi", int(lora.get_pkt_rssi_value()))
-        setattr(packet, "hop_limit", int(payload[12] & 0x7))
-        setattr(packet, "hop_start", int(payload[12] & 0xE0) >> 5)
-        setattr(packet, "want_ack", True if payload[12] & 8 == 8 else False)
+        packet.to = int.from_bytes(payload[3::-1])
+        packet.id = int.from_bytes(payload[11:7:-1])
+        packet.channel = payload[13]
+        packet.rx_time = int(time())
+        packet.rx_snr = int(lora.get_pkt_snr_value())
+        packet.rx_rssi = int(lora.get_pkt_rssi_value())
+        packet.hop_limit = int(payload[12] & 7)
+        packet.hop_start = int(payload[12] & 224) >> 5
+        packet.want_ack = True if payload[12] & 8 == 8 else False
         insert_node(packet)
-        if sender in last_msg.keys():
-            #            print("Sender {:02x} found, last packet is {}".format(sender, last_msg[sender]))
+        if sender in last_msg:
+            #            logging.debug("Sender {:02x} found, last packet is {}".format(sender, last_msg[sender]))
             if last_msg[sender] >= packet_id:
-                #                print("dupe")
+                #                logging.debug("dupe")
                 self.set_mode(MODE.SLEEP)
                 self.reset_ptr_rx()
                 BOARD.led_off()
                 self.set_mode(MODE.RXCONT)
                 return
         last_msg[sender] = packet_id
-        #        print(packet)
-        #        print('Hop Limit: {}, Hop Start: {}, Want Ack? {}, Hash: {}'.format(payload[12] & 0x7, (payload[12] & 0xE0) >> 5, (payload[12] & 8 ) >> 3, payload[13]))
-        #        print('Next Hop: {:02x}, Relay Node: {:02x}'.format(payload[14], payload[15]))
+        #        logging.debug(packet)
+        #        logging.debug('Hop Limit: {}, Hop Start: {}, Want Ack? {}, Hash: {}'.format(payload[12] & 0x7, (payload[12] & 0xE0) >> 5, (payload[12] & 8 ) >> 3, payload[13]))
+        #        logging.debug('Next Hop: {:02x}, Relay Node: {:02x}'.format(payload[14], payload[15]))
 
         ## decrypt the message and decode the enclosed protobuf
         decrypt_cipher = AES.new(key, AES.MODE_CTR, nonce=bytearray(nonce))
         plain_text = decrypt_cipher.decrypt(bytearray(payload[16:]))
-        #        print('Plain text:  {}'.format(' '.join(hex(b) for b in plain_text)))
+        #        logging.debug('Plain text:  {}'.format(' '.join(hex(b) for b in plain_text)))
         data = mesh_pb2.Data()
         try:
             data.ParseFromString(plain_text)
-        except (google.protobuf.message.DecodeError, Exception) as error:
-            print("Unable to decode protobuf from %s", sender)
+        except (google.protobuf.message.DecodeError, Exception):
+            logging.debug("Unable to decode protobuf from %s", sender)
         match data.portnum:
             case 1:
-                print("Got a text message:  {}", data.payload())
+                logging.debug("Got a text message:  {}", data.payload())
             case 3:
                 pos = mesh_pb2.Position()
                 pos.ParseFromString(data.payload)
                 insert_position(sender, pos)
-            #                print('Position data: {}'.format(pos))
+            #                logging.debug('Position data: {}'.format(pos))
             case 4:
                 ni = mesh_pb2.User()
                 ni.ParseFromString(data.payload)
                 insert_nodeinfo(sender, ni)
-            #                print('NodeInfo data: {}'.format(ni))
+            #                logging.debug('NodeInfo data: {}'.format(ni))
             case 67:
                 tel = telemetry_pb2.Telemetry()
                 tel.ParseFromString(data.payload)
-            #                print('Telemetry data: {}'.format(tel))
+            #                logging.debug('Telemetry data: {}'.format(tel))
             case 71:
                 ni = mesh_pb2.NeighborInfo()
                 ni.ParseFromString(data.payload)
                 insert_neighbor_info(sender, ni)
-                print("Neighbor Info: {}".format(ni))
+                logging.debug(f"Neighbor Info: {ni}")
             case _:
-                print("I dunno, man")
+                logging.debug("I dunno, man")
         self.set_mode(MODE.SLEEP)
         self.reset_ptr_rx()
         BOARD.led_off()
         self.set_mode(MODE.RXCONT)
 
     def on_tx_done(self):
-        print("\nTxDone")
-        print(self.get_irq_flags())
+        logging.debug("\nTxDone")
+        logging.debug(self.get_irq_flags())
 
     def on_cad_done(self):
-        print("\non_CadDone")
-        print(self.get_irq_flags())
+        logging.debug("\non_CadDone")
+        logging.debug(self.get_irq_flags())
 
     def on_rx_timeout(self):
-        print("\non_RxTimeout")
-        print(self.get_irq_flags())
+        logging.debug("\non_RxTimeout")
+        logging.debug(self.get_irq_flags())
 
     def on_valid_header(self):
-        print("\non_ValidHeader")
-        print(self.get_irq_flags())
+        logging.debug("\non_ValidHeader")
+        logging.debug(self.get_irq_flags())
 
     def on_payload_crc_error(self):
-        print("\non_PayloadCrcError")
-        print(self.get_irq_flags())
+        logging.debug("\non_PayloadCrcError")
+        logging.debug(self.get_irq_flags())
 
     def on_fhss_change_channel(self):
-        print("\non_FhssChangeChannel")
-        print(self.get_irq_flags())
+        logging.debug("\non_FhssChangeChannel")
+        logging.debug(self.get_irq_flags())
 
     def start(self):
         self.reset_ptr_rx()
@@ -168,7 +170,7 @@ class LoRaRcvCont(LoRa):
             t = t + 1
             if t > 300:
                 t = 0
-                # print(last_msg)
+                # logging.debug(last_msg)
             if not self.irq_events_available:
                 self.handle_irq_flags()
 
@@ -184,7 +186,7 @@ def load_config(filename="database.ini", section="postgresql"):
         for param in params:
             config[param[0]] = param[1]
     else:
-        raise Exception("Section {0} not found in the {1} file".format(section, filename))
+        raise Exception(f"Section {section} not found in the {filename} file")
 
     return config
 
@@ -194,10 +196,10 @@ def connect(config):
     try:
         # connecting to the PostgreSQL server
         with psycopg2.connect(**config) as conn:
-            print("Connected to the PostgreSQL server.")
+            logging.debug("Connected to the PostgreSQL server.")
             return conn
     except (psycopg2.DatabaseError, Exception) as error:
-        print(error)
+        logging.debug(error)
 
 
 def insert_node(node):
@@ -224,9 +226,9 @@ def insert_node(node):
                 )
                 # commit the changes to the database
                 conn.commit()
-                print("  Node packet stored")
+                logging.debug("  Node packet stored")
     except (Exception, psycopg2.DatabaseError) as error:
-        print(error)
+        logging.debug(error)
 
 
 def insert_nodeinfo(from_node, nodeinfo):
@@ -262,10 +264,10 @@ def insert_nodeinfo(from_node, nodeinfo):
                     )
                 # commit the changes to the database
                 conn.commit()
-                print("  Nodeinfo stored")
+                logging.debug("  Nodeinfo stored")
     except (Exception, psycopg2.DatabaseError) as error:
-        print("Exception storing nodeinfo")
-        print(error)
+        logging.debug("Exception storing nodeinfo")
+        logging.debug(error)
 
 
 def insert_position(from_node, pos):
@@ -296,13 +298,13 @@ def insert_position(from_node, pos):
                             pos.altitude,
                         ),
                     )
-                    print("  Inserted  location for {}".format(from_node))
+                    logging.debug(f"  Inserted  location for {from_node}")
                 else:
-                    print("  Updated location for {}".format(from_node))
+                    logging.debug(f"  Updated location for {from_node}")
                 # commit the changes to the database
                 conn.commit()
     except (Exception, psycopg2.DatabaseError) as error:
-        print(error)
+        logging.debug(error)
 
 
 def insert_neighbor_info(from_node, neighbor_info):
@@ -324,9 +326,9 @@ def insert_neighbor_info(from_node, neighbor_info):
                     )
                 # commit the changes to the database
                 conn.commit()
-                print("  Neighbor Info stored")
+                logging.debug("  Neighbor Info stored")
     except (Exception, psycopg2.DatabaseError) as error:
-        print(error)
+        logging.debug(error)
 
 
 lora = LoRaRcvCont(BOARD, verbose=False)
@@ -348,10 +350,9 @@ lora.set_low_data_rate_optim(False)
 # lora.set_pa_ramp(PA_RAMP.RAMP_50_us)
 lora.set_agc_auto_on(True)
 
-print(lora)
+logging.debug(lora)
 assert lora.get_agc_auto_on() == 1
 
-from configparser import ConfigParser
 
 config = load_config()
 connect(config)
@@ -360,11 +361,11 @@ try:
     lora.start()
 except KeyboardInterrupt:
     sys.stdout.flush()
-    print("")
+    logging.debug()
     sys.stderr.write("KeyboardInterrupt\n")
 finally:
     sys.stdout.flush()
-    print("")
+    logging.debug()
     lora.set_mode(MODE.SLEEP)
-    #    print(lora)
+    #    logging.debug(lora)
     BOARD.teardown()
