@@ -13,6 +13,8 @@ source venv/bin/activate
 pip install --upgrade pip
 pip install -e .
 ```
+n.b. you will need the postgresql dev package installed to build psycopg.  On Debian/Ubuntu:
+`apt get install libpq-dev`
 
 This project assumes you have a working Postgresql database set up on a reachable host, and have installed the PostGIS
 Spatial Reference addons.  Begin by creating a pair of new users, mesh_ro and mesh_rw, and remember their passwords.
@@ -35,3 +37,17 @@ sed -i "s/PG_HOST/${db_host}/g" mesh_persist.ini
 set -i "s/PG_PORT/${db_port}/g" mesh_persist.ini
 # EDIT mesh_persist.ini to set your MQTT server information!!
 ```
+
+If you're ambitious and have lots of DB disk space, you can take the full feed from the meshtastic core server.
+To do so, use this in your mesh_persist.ini:
+```
+[mqtt]
+broker=mqtt.meshtastic.org
+port=1883
+user=meshdev
+pass=large4cats
+topic=msh/#
+```
+For finer control over the stream, use the apprpriate country code, state, and region code for your area, i.e.:
+`topic=msh/US/CA/SacValley`
+
