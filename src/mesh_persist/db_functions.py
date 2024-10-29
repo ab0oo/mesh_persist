@@ -40,6 +40,7 @@ def load_config(filename: str = "mesh_persist.ini", section: str = "postgresql")
         sys.exit(1)
 
     except configparser.ParsingError:
+        self.logger.fatal("Unable to load DB configs.")
         sys.exit(1)
 
 
@@ -49,7 +50,9 @@ def connect(config: dict):  # noqa: ANN201
         # connecting to the PostgreSQL server
         with psycopg2.connect(**config) as conn:
             return conn
-    except (psycopg2.DatabaseError, Exception):
+    except psycopg2.DatabaseError as e:
+        err = f"Unable to connect to database: {e}"
+        logging.fatal(err)
         sys.exit(1)
 
 
@@ -101,9 +104,8 @@ class DbFunctions:
                 )
                 # commit the changes to the database
                 self.conn.commit()
-        except (Exception, psycopg2.DatabaseError):
-            self.logger.exception("Got an error on node_insertion:  ")
-            traceback.print_exc()
+        except psycopg2.Error as e:
+            self.logger.error(f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}")
 
     def insert_nodeinfo(self, from_node: str, nodeinfo: mesh_pb2.User, toi: int) -> None:
         """Called for NodeInfo packets, to insert/update existing node info."""
@@ -143,9 +145,8 @@ class DbFunctions:
                 )
                 self.logger.debug("Upserted nodeinfo")
                 self.conn.commit()
-        except (Exception, psycopg2.DatabaseError):
-            self.logger.exception("Exception storing nodeinfo")
-            traceback.print_exc()
+        except psycopg2.Error as e:
+            self.logger.error(f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}")
 
     def insert_position(self, from_node, pos, toi) -> None:
         """Inserts Meshtastic node position data into db."""
@@ -180,9 +181,8 @@ class DbFunctions:
                 # commit the changes to the database
                 self.conn.commit()
                 self.logger.debug("Upserted position")
-        except (Exception, psycopg2.DatabaseError):
-            self.logger.exception("Error altering position info")
-            traceback.print_exc()
+        except psycopg2.Error as e:
+            self.logger.error(f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}")
 
     def insert_neighbor_info(self, from_node: int, neighbor_info: mesh_pb2.NeighborInfo, rx_time: int) -> None:
         """Inserts Meshtastic NeighborInfo packet data into DB."""
@@ -212,8 +212,8 @@ class DbFunctions:
                 # commit the changes to the database
                 self.conn.commit()
                 self.logger.debug("Upserted Neighbor Info")
-        except (Exception, psycopg2.DatabaseError):
-            self.logger.exception("Database Error")
+        except psycopg2.Error as e:
+            self.logger.error(f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}")
 
     def insert_text_message(self, from_node, to_node, packet_id, rx_time, body) -> None:
         """Inserts meshtastic text messages into db."""
@@ -224,8 +224,8 @@ class DbFunctions:
                 cur.execute(insert_sql, (from_node, to_node, packet_id, rx_time, body))
                 self.conn.commit()
                 self.logger.debug("Inserted text message")
-        except (Exception, psycopg2.DatabaseError):
-            self.logger.exception("Database Error")
+        except psycopg2.Error as e:
+            self.logger.error(f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}")
 
     def insert_telemetry(self, from_node, packet_id, rx_time, telem) -> None:
         """Inserts various telemetry data sent via Meshtastic packets.
@@ -264,5 +264,5 @@ class DbFunctions:
                     )
                     self.conn.commit()
                     self.logger.debug("Inserted telemetry")
-            except (Exception, psycopg2.DatabaseError):
-                self.logger.exception("Database Error")
+            except psycopg2.Error as e:
+                self.logger.error(f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}")

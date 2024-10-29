@@ -34,6 +34,7 @@ class MeshPersist:
 
     def load_mqtt_config(self, filename: str = "mesh_persist.ini", section: str = "mqtt") -> dict:
         """Reads configfile configuration for mqtt server."""
+        self.logger.info("Reading config file...")
         parser = ConfigParser()
         parser.read(filename)
 
@@ -48,6 +49,7 @@ class MeshPersist:
             self.logger.fatal(err)
             sys.exit(1)
 
+        self.logger.info("Read config file.")
         return config
 
     def on_message(  # noqa: C901

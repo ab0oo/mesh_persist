@@ -152,6 +152,7 @@ CREATE TABLE public.node_infos (
     mac_addr character varying(20),
     hw_model character varying(30),
     role character varying,
+    public_key character varying(100),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
