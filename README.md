@@ -24,6 +24,8 @@ export db_port="5432" # this is the default postgres port
 export rw_pw=$( date | md5sum | head -c 12)
 sleep 2
 export ro_pw=$( date | md5sum | head -c 12)
+touch ~/.pgpass
+chmod 600 ~/.pgpass
 echo "$db_host:$db_port:meshtastic:mesh_ro:$ro_pw" >> ~/.pgpass
 echo "$db_host:$db_port:meshtastic:mesh_rw:$rw_pw" >> ~/.pgpass
 sudo -u postgres createuser -s -d -l mesh_rw

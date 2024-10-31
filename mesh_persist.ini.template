@@ -6,8 +6,8 @@ user=mesh_rw
 password=PG_PASSWORD
 
 [mqtt]
-broker=10.8.0.1
+broker=MQTT_BROKER
 port=1883
 user=mesh_rw
-pass=Rwc2TH#v8^aK3dk8
+pass=MQTT_PASSWORD
 topic=msh/#
