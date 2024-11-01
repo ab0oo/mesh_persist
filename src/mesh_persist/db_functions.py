@@ -7,7 +7,6 @@ import configparser
 import logging
 import sys
 import time
-import traceback
 
 import psycopg2
 from meshtastic import config_pb2, mesh_pb2, mqtt_pb2, portnums_pb2  # type: ignore
@@ -40,7 +39,7 @@ def load_config(filename: str = "mesh_persist.ini", section: str = "postgresql")
         sys.exit(1)
 
     except configparser.ParsingError:
-        self.logger.fatal("Unable to load DB configs.")
+        logging.fatal("Unable to load DB configs.")
         sys.exit(1)
 
 
@@ -105,7 +104,8 @@ class DbFunctions:
                 # commit the changes to the database
                 self.conn.commit()
         except psycopg2.Error as e:
-            self.logger.error(f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}")
+            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}"
+            self.logger.exception(err)
 
     def insert_nodeinfo(self, from_node: str, nodeinfo: mesh_pb2.User, toi: int) -> None:
         """Called for NodeInfo packets, to insert/update existing node info."""
@@ -146,7 +146,8 @@ class DbFunctions:
                 self.logger.debug("Upserted nodeinfo")
                 self.conn.commit()
         except psycopg2.Error as e:
-            self.logger.error(f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}")
+            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}"
+            self.logger.exception(err)
 
     def insert_position(self, from_node, pos, toi) -> None:
         """Inserts Meshtastic node position data into db."""
@@ -182,7 +183,8 @@ class DbFunctions:
                 self.conn.commit()
                 self.logger.debug("Upserted position")
         except psycopg2.Error as e:
-            self.logger.error(f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}")
+            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}"
+            self.logger.exception(err)
 
     def insert_neighbor_info(self, from_node: int, neighbor_info: mesh_pb2.NeighborInfo, rx_time: int) -> None:
         """Inserts Meshtastic NeighborInfo packet data into DB."""
@@ -213,7 +215,8 @@ class DbFunctions:
                 self.conn.commit()
                 self.logger.debug("Upserted Neighbor Info")
         except psycopg2.Error as e:
-            self.logger.error(f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}")
+            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}"
+            self.logger.exception(err)
 
     def insert_text_message(self, from_node, to_node, packet_id, rx_time, body) -> None:
         """Inserts meshtastic text messages into db."""
@@ -225,7 +228,8 @@ class DbFunctions:
                 self.conn.commit()
                 self.logger.debug("Inserted text message")
         except psycopg2.Error as e:
-            self.logger.error(f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}")
+            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}"
+            self.logger.exception(err)
 
     def insert_telemetry(self, from_node, packet_id, rx_time, telem) -> None:
         """Inserts various telemetry data sent via Meshtastic packets.
@@ -265,4 +269,5 @@ class DbFunctions:
                     self.conn.commit()
                     self.logger.debug("Inserted telemetry")
             except psycopg2.Error as e:
-                self.logger.error(f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}")
+                err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}"
+                self.logger.exception(err)

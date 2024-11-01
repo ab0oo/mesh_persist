@@ -61,13 +61,7 @@ class MeshPersist:
     ) -> None:
         """Callback function when message received from MQTT server."""
         service_envelope = mqtt_pb2.ServiceEnvelope()
-        if service_envelope is not None:
-            try:
-                se = service_envelope.ParseFromString(message.payload)
-            except (DecodeError, Exception):
-                self.logger.exception("Exception in initial Service Envelope decode")
-                return
-        else:
+        if service_envelope is None:
             return
 
         msg_pkt = service_envelope.packet
