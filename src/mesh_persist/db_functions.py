@@ -1,6 +1,7 @@
 """Database Functions.
 
-This module contains the database functions that store various types of Meshtastic packets to the PostgreSQL database.
+This module contains the database functions that store various types of 
+Meshtastic packets to the PostgreSQL database.
 """
 
 import configparser

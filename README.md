@@ -3,8 +3,8 @@ Persistence tools for Meshtastic/MQTT integration
 
 This is a set of tools anc configurations that will allow you to pull data from any Meshtastic MQTT feed
 and persist that data to a well-structured relational database for further analysis.  It is relatively
-easy to set up and uses standard PiPy python libraries.
-It can be run on a Raspberry Pi to provide a complete, local/disconnected information system
+easy to set up and uses standard PyPI python libraries.
+It can be run on a Raspberry Pi to provide a complete, local/disconnected information system.  Instructions can be found in [raspi_build.md](raspi_build.md)
 
 To set up this python project:
 ```
@@ -36,7 +36,7 @@ PGPASSWORD=${rw_pw} createdb -h $db_host -p $db_port -U mesh_rw meshtastic
 PGPASSWORD=${rw_pw} psql -h ${db_host} -p ${db_port} -U mesh_rw meshtastic -f db/meshtastic.sql
 sed "s/PG_PASSWORD/${pg_rw}/g" mesh_persist.ini.template > mesh_persist.ini
 sed -i "s/PG_HOST/${db_host}/g" mesh_persist.ini
-set -i "s/PG_PORT/${db_port}/g" mesh_persist.ini
+sed -i "s/PG_PORT/${db_port}/g" mesh_persist.ini
 # EDIT mesh_persist.ini to set your MQTT server information!!
 ```
 
