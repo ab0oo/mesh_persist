@@ -65,6 +65,14 @@ class DbFunctions:
         self.config = load_config()
         self.conn = connect(self.config)
 
+    def test_connection(self) -> bool:
+        try:
+            cur = self.conn.cursor()
+            cur.execute('SELECT 1')
+        except psycopg2.OperationalError:
+            return False
+        return True
+
     def insert_mesh_packet(self, service_envelope: mqtt_pb2.ServiceEnvelope) -> None:
         """Called for every received packet:  insert the base packet infomation."""
         mp = service_envelope.packet

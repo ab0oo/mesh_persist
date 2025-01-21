@@ -20,6 +20,7 @@ from . import db_functions
 class MeshPersist:
     """Main class for the meshtastic MQTT->DB gateway."""
 
+    msg_queue = []
     def __init__(self) -> None:
         """Initialization function for MeshPersist."""
         self.last_msg: dict[int, int] = {}
@@ -103,40 +104,48 @@ class MeshPersist:
         )
         self.logger.info(dbg)
 
-        try:
-            if not msg_pkt.decoded:
-                self.logger.warning("Encrypted packets not yet handled.")
-                return
-            if msg_pkt.decoded.portnum == portnums_pb2.NODEINFO_APP:
-                self.db.insert_nodeinfo(from_node=source, nodeinfo=pb, toi=toi)
+        self.msg_queue.append(msg_pkt)
 
-            if msg_pkt.decoded.portnum == portnums_pb2.POSITION_APP:
-                self.db.insert_position(from_node=source, pos=pb, toi=toi)
+        if not self.db.test_connection():
+            return
 
-            if msg_pkt.decoded.portnum == portnums_pb2.NEIGHBORINFO_APP:
-                self.db.insert_neighbor_info(from_node=source, neighbor_info=pb, rx_time=toi)
+        while len(self.msg_queue) > 0:
+            msg_pkt = self.msg_queue.pop(0)
+            
+            try:
+                if not msg_pkt.decoded:
+                    self.logger.warning("Encrypted packets not yet handled.")
+                    return
+                if msg_pkt.decoded.portnum == portnums_pb2.NODEINFO_APP:
+                    self.db.insert_nodeinfo(from_node=source, nodeinfo=pb, toi=toi)
 
-            if msg_pkt.decoded.portnum == portnums_pb2.TELEMETRY_APP:
-                self.db.insert_telemetry(from_node=source, packet_id=pkt_id, rx_time=toi, telem=pb)
+                if msg_pkt.decoded.portnum == portnums_pb2.POSITION_APP:
+                    self.db.insert_position(from_node=source, pos=pb, toi=toi)
 
-            if msg_pkt.decoded.portnum == portnums_pb2.ROUTING_APP:
-                route = mesh_pb2.Routing()
-                route.ParseFromString(msg_pkt.decoded.payload)
-                self.logger.debug(route)
+                if msg_pkt.decoded.portnum == portnums_pb2.NEIGHBORINFO_APP:
+                    self.db.insert_neighbor_info(from_node=source, neighbor_info=pb, rx_time=toi)
 
-            if msg_pkt.decoded.portnum == portnums_pb2.TEXT_MESSAGE_APP:
-                text_message = msg_pkt.decoded.payload.decode("utf-8")
-                self.db.insert_text_message(
-                    from_node=source, to_node=dest, packet_id=pkt_id, rx_time=toi, body=text_message
+                if msg_pkt.decoded.portnum == portnums_pb2.TELEMETRY_APP:
+                    self.db.insert_telemetry(from_node=source, packet_id=pkt_id, rx_time=toi, telem=pb)
+
+                if msg_pkt.decoded.portnum == portnums_pb2.ROUTING_APP:
+                    route = mesh_pb2.Routing()
+                    route.ParseFromString(msg_pkt.decoded.payload)
+                    self.logger.debug(route)
+
+                if msg_pkt.decoded.portnum == portnums_pb2.TEXT_MESSAGE_APP:
+                    text_message = msg_pkt.decoded.payload.decode("utf-8")
+                    self.db.insert_text_message(
+                        from_node=source, to_node=dest, packet_id=pkt_id, rx_time=toi, body=text_message
                 )
 
-            if msg_pkt.decoded.portnum == portnums_pb2.MAP_REPORT_APP:
-                map_report = mqtt_pb2.MapReport()
-                map_report.ParseFromString(msg_pkt.decoded.payload)
+                if msg_pkt.decoded.portnum == portnums_pb2.MAP_REPORT_APP:
+                    map_report = mqtt_pb2.MapReport()
+                    map_report.ParseFromString(msg_pkt.decoded.payload)
 
-        except (DecodeError, Exception):
-            self.logger.exception("Failed to decode an on air message.  Punting on it.")
-            return
+            except (DecodeError, Exception):
+                self.logger.exception("Failed to decode an on air message.  Punting on it.")
+                return
 
     def on_connect(
         self,
