@@ -10,16 +10,16 @@ import sys
 import time
 
 import psycopg2
-from meshtastic import config_pb2, mesh_pb2, mqtt_pb2, portnums_pb2  # type: ignore
+from meshtastic import config_pb2, mesh_pb2, mqtt_pb2, portnums_pb2
 
 
-def hex_to_id(node_id) -> int:
+def hex_to_id(node_id: str) -> int:
     """Converts a Meshtastic string node_id to a hex int."""
     n = node_id.replace("!", "0x")
     return int(n, 0)
 
 
-def id_to_hex(node_id) -> str:
+def id_to_hex(node_id: int) -> str:
     """Converts a hex node_id to a Meshtastic-style node address."""
     return "!" + hex(node_id)[2:]
 
@@ -66,9 +66,10 @@ class DbFunctions:
         self.conn = connect(self.config)
 
     def test_connection(self) -> bool:
+        """Called to determine if a DB connection is up and active."""
         try:
             cur = self.conn.cursor()
-            cur.execute('SELECT 1')
+            cur.execute("SELECT 1")
         except psycopg2.OperationalError:
             return False
         return True

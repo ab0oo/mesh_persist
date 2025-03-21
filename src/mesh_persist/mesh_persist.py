@@ -7,7 +7,7 @@ persists specific types of messages to the database.
 import logging
 import sys
 from configparser import ConfigParser
-from typing import Any
+from typing import Any, ClassVar
 
 import paho
 import paho.mqtt.client as mqtt
@@ -20,7 +20,8 @@ from . import db_functions
 class MeshPersist:
     """Main class for the meshtastic MQTT->DB gateway."""
 
-    msg_queue = []
+    msg_queue: ClassVar[list[Any]] = []
+
     def __init__(self) -> None:
         """Initialization function for MeshPersist."""
         self.last_msg: dict[int, int] = {}
@@ -51,7 +52,7 @@ class MeshPersist:
 
         return config
 
-    def on_message(  # noqa: C901
+    def on_message(  # noqa: C901  PLR0911 PLR0912 PLR0915
         self,
         client: paho.mqtt.client.Client,
         userdata: dict[Any, Any],
@@ -62,7 +63,7 @@ class MeshPersist:
         service_envelope = mqtt_pb2.ServiceEnvelope()
         if service_envelope is not None:
             try:
-                se = service_envelope.ParseFromString(message.payload)
+                service_envelope.ParseFromString(message.payload)
             except (DecodeError, Exception):
                 self.logger.exception("Exception in initial Service Envelope decode")
                 return
@@ -80,7 +81,8 @@ class MeshPersist:
         # separately
         if portnums_pb2.PortNum.Name(portnum) != "MAP_REPORT_APP":
             self.db.insert_mesh_packet(service_envelope=service_envelope)
-            self.logger.debug(f"Portnum {portnum} from GW {gateway_id}")
+            logline = "Portnum " + str(portnum) + " from GW " + str(gateway_id)
+            self.logger.debug(logline)
         if source in self.last_msg and self.last_msg[source] == pkt_id:
             self.logger.debug("dupe")
             return
@@ -95,7 +97,7 @@ class MeshPersist:
             try:
                 pb.ParseFromString(msg_pkt.decoded.payload)
             except Exception:
-                self.logger.exception()
+                self.logger.exception("Unable to parse Service Envelope")
                 return
         dbg = (
             db_functions.id_to_hex(source)
@@ -113,7 +115,7 @@ class MeshPersist:
 
         while len(self.msg_queue) > 0:
             msg_pkt = self.msg_queue.pop(0)
-            
+
             try:
                 if not msg_pkt.decoded:
                     self.logger.warning("Encrypted packets not yet handled.")
@@ -139,7 +141,7 @@ class MeshPersist:
                     text_message = msg_pkt.decoded.payload.decode("utf-8")
                     self.db.insert_text_message(
                         from_node=source, to_node=dest, packet_id=pkt_id, rx_time=toi, body=text_message
-                )
+                    )
 
                 if msg_pkt.decoded.portnum == portnums_pb2.MAP_REPORT_APP:
                     map_report = mqtt_pb2.MapReport()
@@ -147,7 +149,6 @@ class MeshPersist:
 
             except (DecodeError, Exception):
                 self.logger.exception("Failed to decode an on air message.  Punting on it.")
-                return
 
     def on_connect(
         self,

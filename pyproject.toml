@@ -15,11 +15,12 @@ requires-python = ">=3.11"
 dynamic = ["version"]
 dependencies = [
     "configparser",
-    "meshtastic>=2.5.0",
+    "meshtastic>=2.6.0",
     "paho_mqtt",
     "psycopg2",
     "tox",
     "types-psycopg2",
+    "types-protobuf",
 ]
 
 [project.scripts]
@@ -54,18 +55,15 @@ src = ["src"]
 extend-exclude = [
     "conf.py",
 ]
-target-version = "py311"
+target-version = "py312"
 lint.select = ["ALL"]
 lint.ignore = [
     "COM812",   # Conflicts with the formatter
     "ISC001",   # Conflicts with the formatter
-    "ANN101",   # "missing-type-self"
     "ANN001",   # missing type annotations in function args
     "ARG002",   # Unused method argument
     "ERA001",   # Commented code is ok for now XXX TODO XXX
     "PT001",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
-    "PT004",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
-    "PT005",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
     "PT023",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
     "PGH003",
 ]
@@ -94,6 +92,7 @@ convention = "google"
 disallow_untyped_defs = false # Functions need to be annotated
 warn_unused_ignores = true
 namespace_packages = true
+follow_untyped_imports = true
 exclude = [
     "mesh_persist-\\d+", # Ignore temporary folder created by setuptools when building an sdist
     "venv.*/",
