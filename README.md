@@ -16,6 +16,8 @@ pip install -e .
 n.b. you will need the postgresql dev package installed to build psycopg.  On Debian/Ubuntu:
 `apt get install libpq-dev`
 
+To run in development mode, straight from the src tree, use `python3 -m src.main` from the root of the project.
+
 This project assumes you have a working Postgresql database set up on a reachable host, and have installed the PostGIS
 Spatial Reference addons.  Begin by creating a pair of new users, mesh_ro and mesh_rw, and remember their passwords.
 ```

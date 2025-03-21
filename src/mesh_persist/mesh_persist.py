@@ -25,9 +25,9 @@ class MeshPersist:
         """Initialization function for MeshPersist."""
         self.last_msg: dict[int, int] = {}
         self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(logging.DEBUG)
         ch = logging.StreamHandler(sys.stdout)
-        ch.setLevel(logging.INFO)
+        ch.setLevel(logging.DEBUG)
         formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
@@ -73,12 +73,14 @@ class MeshPersist:
         portnum = msg_pkt.decoded.portnum
         toi = msg_pkt.rx_time
         pkt_id = msg_pkt.id
+        gateway_id = service_envelope.gateway_id
         source = getattr(msg_pkt, "from")
         # we don't care to store map_report msgs, because they are locally generated and
         # will violate the unique key of the mesh_packets table.  We'll deal with them
         # separately
         if portnums_pb2.PortNum.Name(portnum) != "MAP_REPORT_APP":
             self.db.insert_mesh_packet(service_envelope=service_envelope)
+            self.logger.debug(f"Portnum {portnum} from GW {gateway_id}")
         if source in self.last_msg and self.last_msg[source] == pkt_id:
             self.logger.debug("dupe")
             return
@@ -86,7 +88,7 @@ class MeshPersist:
         self.last_msg[source] = pkt_id
 
         handler = protocols.get(msg_pkt.decoded.portnum)
-        if type(handler) is None:
+        if type(handler) is None or handler is None:
             return
         if handler.protobufFactory is not None:
             pb = handler.protobufFactory()
