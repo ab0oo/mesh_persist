@@ -2,12 +2,36 @@
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 16.4 (Debian 16.4-1.pgdg120+1)
--- Dumped by pg_dump version 16.4 (Debian 16.4-1.pgdg120+1)
+-- Dumped from database version 17.4 (Debian 17.4-1.pgdg130+2)
+-- Dumped by pg_dump version 17.4 (Debian 17.4-1.pgdg130+2)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- Name: meshtastic; Type: DATABASE; Schema: -; Owner: mesh_rw
+--
+
+CREATE DATABASE meshtastic WITH TEMPLATE = template0 ENCODING = 'UTF8' LOCALE_PROVIDER = libc LOCALE = 'en_US.UTF-8';
+
+
+ALTER DATABASE meshtastic OWNER TO mesh_rw;
+
+\connect meshtastic
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -104,20 +128,21 @@ CREATE TABLE public.device_metrics (
 ALTER TABLE public.device_metrics OWNER TO mesh_rw;
 
 --
--- Name: last_device_metrics; Type: VIEW; Schema: public; Owner: mesh_ro
+-- Name: last_device_metrics; Type: MATERIALIZED VIEW; Schema: public; Owner: mesh_rw
 --
 
-CREATE VIEW public.last_device_metrics AS
+CREATE MATERIALIZED VIEW public.last_device_metrics AS
  SELECT DISTINCT ON (node_id) node_id,
     round((battery_level)::numeric, 2) AS battery_level,
     round((voltage)::numeric, 2) AS voltage,
     round((channel_util)::numeric, 2) AS channel_util,
     round((air_util_tx)::numeric, 2) AS air_util_tx
    FROM public.device_metrics
-  ORDER BY node_id, toi DESC;
+  ORDER BY node_id, toi DESC
+  WITH NO DATA;
 
 
-ALTER VIEW public.last_device_metrics OWNER TO mesh_ro;
+ALTER MATERIALIZED VIEW public.last_device_metrics OWNER TO mesh_rw;
 
 --
 -- Name: mesh_packets; Type: TABLE; Schema: public; Owner: mesh_rw
@@ -152,9 +177,9 @@ CREATE TABLE public.node_infos (
     mac_addr character varying(20),
     hw_model character varying(30),
     role character varying,
-    public_key character varying(100),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    public_key character varying(100)
 );
 
 
@@ -178,46 +203,37 @@ CREATE TABLE public.node_positions (
 ALTER TABLE public.node_positions OWNER TO mesh_rw;
 
 --
--- Name: current_nodes; Type: VIEW; Schema: public; Owner: mesh_ro
+-- Name: current_nodes; Type: VIEW; Schema: public; Owner: mesh_rw
 --
 
 CREATE VIEW public.current_nodes AS
- SELECT DISTINCT ON (node_id) node_id,
-    short_name,
-    long_name,
-    hw_model,
-    role,
-    altitude,
-    latitude,
-    longitude,
-    battery_level,
-    voltage,
-    channel_util,
-    air_util_tx,
-    since
-   FROM ( SELECT n.source AS node_id,
-            ni.short_name,
-            ni.long_name,
-            ni.hw_model,
-            ni.role,
-            np.altitude,
-            np.latitude,
-            np.longitude,
-            dm.battery_level,
-            dm.voltage,
-            dm.channel_util,
-            dm.air_util_tx,
-            min((now() - n.toi)) AS since
-           FROM (((public.mesh_packets n
-             LEFT JOIN public.node_infos ni ON ((n.source = ni.node_id)))
-             LEFT JOIN public.node_positions np ON ((n.source = np.node_id)))
-             LEFT JOIN public.last_device_metrics dm ON ((n.source = dm.node_id)))
-          GROUP BY n.source, ni.long_name, ni.short_name, ni.mac_addr, ni.hw_model, ni.role, np.latitude, np.longitude, np.altitude, np.geom, dm.battery_level, dm.voltage, dm.channel_util, dm.air_util_tx
-          ORDER BY n.source, (min((now() - n.toi))) DESC) current_nodes
-  ORDER BY node_id, since DESC;
+ SELECT DISTINCT ON (n.source) n.source AS node_id,
+    ni.short_name,
+    ni.long_name,
+    ni.hw_model,
+    ni.role,
+    np.altitude,
+    np.latitude,
+    np.longitude,
+    dm.battery_level,
+    dm.voltage,
+    dm.channel_util,
+    dm.air_util_tx,
+    (now() - mp.toi) AS since
+   FROM ((((public.mesh_packets n
+     LEFT JOIN public.node_infos ni ON ((n.source = ni.node_id)))
+     LEFT JOIN public.node_positions np ON ((n.source = np.node_id)))
+     LEFT JOIN public.last_device_metrics dm ON ((n.source = dm.node_id)))
+     LEFT JOIN LATERAL ( SELECT mesh_packets.toi
+           FROM public.mesh_packets
+          WHERE ((mesh_packets.source = n.source) AND (mesh_packets.toi >= (now() - '7 days'::interval)))
+          ORDER BY mesh_packets.toi DESC
+         LIMIT 1) mp ON (true))
+  WHERE (n.toi >= (now() - '3 days'::interval))
+  ORDER BY n.source, (now() - mp.toi) DESC;
 
 
-ALTER VIEW public.current_nodes OWNER TO mesh_ro;
+ALTER VIEW public.current_nodes OWNER TO mesh_rw;
 
 --
 -- Name: environment_metrics; Type: TABLE; Schema: public; Owner: mesh_rw
@@ -405,6 +421,13 @@ CREATE UNIQUE INDEX idx_air_quality_metrics_uk ON public.air_quality_metrics USI
 
 
 --
+-- Name: idx_device_metrics_node_id_toi_desc; Type: INDEX; Schema: public; Owner: mesh_rw
+--
+
+CREATE INDEX idx_device_metrics_node_id_toi_desc ON public.device_metrics USING btree (node_id, toi DESC);
+
+
+--
 -- Name: idx_device_metrics_uk; Type: INDEX; Schema: public; Owner: mesh_rw
 --
 
@@ -426,6 +449,13 @@ CREATE UNIQUE INDEX idx_local_stats_uk ON public.local_stats USING btree (node_i
 
 
 --
+-- Name: idx_mesh_packets_source_toi; Type: INDEX; Schema: public; Owner: mesh_rw
+--
+
+CREATE INDEX idx_mesh_packets_source_toi ON public.mesh_packets USING btree (source, toi DESC);
+
+
+--
 -- Name: idx_mesh_packets_toi; Type: INDEX; Schema: public; Owner: mesh_rw
 --
 
@@ -436,7 +466,7 @@ CREATE INDEX idx_mesh_packets_toi ON public.mesh_packets USING btree (toi);
 -- Name: idx_mesh_packets_uk; Type: INDEX; Schema: public; Owner: mesh_rw
 --
 
-CREATE UNIQUE INDEX idx_mesh_packets_uk ON public.mesh_packets USING btree (source, packet_id, channel);
+CREATE UNIQUE INDEX idx_mesh_packets_uk ON public.mesh_packets USING btree (source, packet_id, channel, gateway_id);
 
 
 --
@@ -447,10 +477,24 @@ CREATE UNIQUE INDEX idx_neighbor_info_uk ON public.neighbor_info USING btree (id
 
 
 --
+-- Name: idx_node_infos_node_id; Type: INDEX; Schema: public; Owner: mesh_rw
+--
+
+CREATE INDEX idx_node_infos_node_id ON public.node_infos USING btree (node_id);
+
+
+--
 -- Name: idx_node_positions_geom; Type: INDEX; Schema: public; Owner: mesh_rw
 --
 
 CREATE INDEX idx_node_positions_geom ON public.node_positions USING gist (geom);
+
+
+--
+-- Name: idx_node_positions_node_id; Type: INDEX; Schema: public; Owner: mesh_rw
+--
+
+CREATE INDEX idx_node_positions_node_id ON public.node_positions USING btree (node_id);
 
 
 --
@@ -475,6 +519,13 @@ CREATE UNIQUE INDEX idx_power_metrics_uk ON public.power_metrics USING btree (no
 
 
 --
+-- Name: mesh_packets_source_idx; Type: INDEX; Schema: public; Owner: mesh_rw
+--
+
+CREATE INDEX mesh_packets_source_idx ON public.mesh_packets USING btree (source);
+
+
+--
 -- Name: node_positions geom_inserted; Type: TRIGGER; Schema: public; Owner: mesh_rw
 --
 
@@ -487,6 +538,20 @@ CREATE TRIGGER geom_inserted AFTER INSERT ON public.node_positions FOR EACH ROW 
 
 REVOKE USAGE ON SCHEMA public FROM PUBLIC;
 GRANT ALL ON SCHEMA public TO PUBLIC;
+
+
+--
+-- Name: TABLE air_quality_metrics; Type: ACL; Schema: public; Owner: mesh_rw
+--
+
+GRANT SELECT ON TABLE public.air_quality_metrics TO mesh_ro;
+
+
+--
+-- Name: TABLE device_metrics; Type: ACL; Schema: public; Owner: mesh_rw
+--
+
+GRANT SELECT ON TABLE public.device_metrics TO mesh_ro;
 
 
 --
@@ -511,6 +576,13 @@ GRANT SELECT ON TABLE public.node_positions TO mesh_ro;
 
 
 --
+-- Name: TABLE environment_metrics; Type: ACL; Schema: public; Owner: mesh_rw
+--
+
+GRANT SELECT ON TABLE public.environment_metrics TO mesh_ro;
+
+
+--
 -- Name: TABLE geography_columns; Type: ACL; Schema: public; Owner: mesh_rw
 --
 
@@ -525,10 +597,24 @@ GRANT SELECT ON TABLE public.geometry_columns TO mesh_ro;
 
 
 --
+-- Name: TABLE last_node_infos; Type: ACL; Schema: public; Owner: mesh_rw
+--
+
+GRANT SELECT ON TABLE public.last_node_infos TO mesh_ro;
+
+
+--
 -- Name: TABLE last_position; Type: ACL; Schema: public; Owner: postgres
 --
 
 GRANT SELECT ON TABLE public.last_position TO mesh_ro;
+
+
+--
+-- Name: TABLE local_stats; Type: ACL; Schema: public; Owner: mesh_rw
+--
+
+GRANT SELECT ON TABLE public.local_stats TO mesh_ro;
 
 
 --
@@ -543,6 +629,13 @@ GRANT SELECT ON TABLE public.neighbor_info TO mesh_ro;
 --
 
 GRANT SELECT ON TABLE public.neighbor_map TO mesh_ro;
+
+
+--
+-- Name: TABLE power_metrics; Type: ACL; Schema: public; Owner: mesh_rw
+--
+
+GRANT SELECT ON TABLE public.power_metrics TO mesh_ro;
 
 
 --
