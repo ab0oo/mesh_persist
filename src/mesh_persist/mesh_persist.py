@@ -4,9 +4,18 @@ This module connects to MQTT and subscribes to a topic/set of topics, and
 persists specific types of messages to the database.
 """
 
+# pylint: disable=E0401
+# pylint: disable=R0911
+# pylint: disable=R0912
+# pylint: disable=R0913
+# pylint: disable=R0914
+# pylint: disable=R0915
+# pylint: disable=R0917
+# pylint: disable=W0613
+# pylint: disable=W0718
+
 import logging
 import sys
-from configparser import ConfigParser
 from typing import Any, ClassVar
 
 import paho
@@ -14,8 +23,8 @@ import paho.mqtt.client as mqtt
 from google.protobuf.message import DecodeError
 from meshtastic import mesh_pb2, mqtt_pb2, portnums_pb2, protocols
 
+from .config_load import load_config
 from . import db_functions
-
 
 class MeshPersist:
     """Main class for the meshtastic MQTT->DB gateway."""
@@ -34,23 +43,6 @@ class MeshPersist:
         self.logger.addHandler(ch)
         self.db = db_functions.DbFunctions(self.logger)
 
-    def load_mqtt_config(self, filename: str = "mesh_persist.ini", section: str = "mqtt") -> dict:
-        """Reads configfile configuration for mqtt server."""
-        parser = ConfigParser()
-        parser.read(filename)
-
-        # get section, default to postgresql
-        config = {}
-        if parser.has_section(section):
-            params = parser.items(section)
-            for param in params:
-                config[param[0]] = param[1]
-        else:
-            err = f"Section {section} not found in the {filename} file"
-            self.logger.fatal(err)
-            sys.exit(1)
-
-        return config
 
     def on_message(  # noqa: C901  PLR0911 PLR0912 PLR0915
         self,
@@ -64,7 +56,7 @@ class MeshPersist:
         if service_envelope is not None:
             try:
                 service_envelope.ParseFromString(message.payload)
-            except (DecodeError, Exception):
+            except DecodeError:
                 self.logger.exception("Exception in initial Service Envelope decode")
                 return
         else:
@@ -90,7 +82,7 @@ class MeshPersist:
         self.last_msg[source] = pkt_id
 
         handler = protocols.get(msg_pkt.decoded.portnum)
-        if type(handler) is None or handler is None:
+        if isinstance(handler, (str, type(None))) or handler is None:
             return
         if handler.protobufFactory is not None:
             pb = handler.protobufFactory()
@@ -130,7 +122,11 @@ class MeshPersist:
                     self.db.insert_neighbor_info(from_node=source, neighbor_info=pb, rx_time=toi)
 
                 if msg_pkt.decoded.portnum == portnums_pb2.TELEMETRY_APP:
-                    self.db.insert_telemetry(from_node=source, packet_id=pkt_id, rx_time=toi, telem=pb)
+                    self.db.insert_telemetry(from_node=source,
+                                             packet_id=pkt_id,
+                                             rx_time=toi,
+                                             telem=pb
+                                             )
 
                 if msg_pkt.decoded.portnum == portnums_pb2.ROUTING_APP:
                     route = mesh_pb2.Routing()
@@ -139,15 +135,18 @@ class MeshPersist:
 
                 if msg_pkt.decoded.portnum == portnums_pb2.TEXT_MESSAGE_APP:
                     text_message = msg_pkt.decoded.payload.decode("utf-8")
-                    self.db.insert_text_message(
-                        from_node=source, to_node=dest, packet_id=pkt_id, rx_time=toi, body=text_message
+                    self.db.insert_text_message(from_node=source,
+                                                to_node=dest,
+                                                packet_id=pkt_id,
+                                                rx_time=toi,
+                                                body=text_message
                     )
 
                 if msg_pkt.decoded.portnum == portnums_pb2.MAP_REPORT_APP:
                     map_report = mqtt_pb2.MapReport()
                     map_report.ParseFromString(msg_pkt.decoded.payload)
 
-            except (DecodeError, Exception):
+            except DecodeError:
                 self.logger.exception("Failed to decode an on air message.  Punting on it.")
 
     def on_connect(
@@ -184,7 +183,7 @@ class MeshPersist:
         """
         self.logger.info("Starting mesh-persist.")
         self.logger.debug("Loading MQTT config")
-        mqtt_config = self.load_mqtt_config()
+        mqtt_config = load_config(filename="mesh_persist.ini", section="mqtt")
         broker = str(mqtt_config.get("broker"))
         broker_port = int(str(mqtt_config.get("port")))
         broker_user = mqtt_config.get("user")
@@ -193,9 +192,11 @@ class MeshPersist:
         self.db = db_functions.DbFunctions(self.logger)
 
         self.logger.debug("Initializing MQTT connection")
-        client = mqtt.Client(
-            mqtt.CallbackAPIVersion.VERSION2, transport="tcp", protocol=mqtt.MQTTv311, clean_session=True
-        )
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
+                             transport="tcp",
+                             protocol=mqtt.MQTTv311,
+                             clean_session=True
+                             )
         client.username_pw_set(broker_user, broker_pass)
         client.user_data_set(mqtt_config)
         client.on_message = self.on_message

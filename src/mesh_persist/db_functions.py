@@ -4,7 +4,10 @@ This module contains the database functions that store various types of
 Meshtastic packets to the PostgreSQL database.
 """
 
-import configparser
+# pylint: disable=E0401
+# pylint: disable=R0913
+# pylint: disable=R0917
+
 import logging
 import sys
 import time
@@ -12,6 +15,7 @@ import time
 import psycopg2
 from meshtastic import config_pb2, mesh_pb2, mqtt_pb2, portnums_pb2
 
+from .config_load import load_config
 
 def hex_to_id(node_id: str) -> int:
     """Converts a Meshtastic string node_id to a hex int."""
@@ -22,26 +26,6 @@ def hex_to_id(node_id: str) -> int:
 def id_to_hex(node_id: int) -> str:
     """Converts a hex node_id to a Meshtastic-style node address."""
     return "!" + hex(node_id)[2:]
-
-
-def load_config(filename: str = "mesh_persist.ini", section: str = "postgresql") -> dict:
-    """Loads database parameters from configfile-style configuration file."""
-    parser = configparser.ConfigParser()
-    try:
-        parser.read(filename)
-        config = {}
-        if parser.has_section(section):
-            params = parser.items(section)
-            for param in params:
-                config[param[0]] = param[1]
-            return config
-        err = f"Section {section} not found in the {filename} file"
-        logging.fatal(err)
-        sys.exit(1)
-
-    except configparser.ParsingError:
-        logging.fatal("Unable to load DB configs.")
-        sys.exit(1)
 
 
 def connect(config: dict):  # noqa: ANN201
@@ -62,7 +46,7 @@ class DbFunctions:
     def __init__(self, logger: logging.Logger) -> None:
         """Initialization function for db_functions."""
         self.logger = logger
-        self.config = load_config()
+        self.config = load_config(filename="mesh_persist.ini", section="postgresql")
         self.conn = connect(self.config)
 
     def test_connection(self) -> bool:
@@ -114,7 +98,8 @@ class DbFunctions:
                 # commit the changes to the database
                 self.conn.commit()
         except psycopg2.Error as e:
-            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}"
+            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: \
+                {str(e).rstrip()}"
             self.logger.exception(err)
 
     def insert_nodeinfo(self, from_node: str, nodeinfo: mesh_pb2.User, toi: int) -> None:
@@ -156,7 +141,8 @@ class DbFunctions:
                 self.logger.debug("Upserted nodeinfo")
                 self.conn.commit()
         except psycopg2.Error as e:
-            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}"
+            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: \
+                {str(e).rstrip()}"
             self.logger.exception(err)
 
     def insert_position(self, from_node, pos, toi) -> None:
@@ -193,10 +179,14 @@ class DbFunctions:
                 self.conn.commit()
                 self.logger.debug("Upserted position")
         except psycopg2.Error as e:
-            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}"
+            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: \
+                {str(e).rstrip()}"
             self.logger.exception(err)
 
-    def insert_neighbor_info(self, from_node: int, neighbor_info: mesh_pb2.NeighborInfo, rx_time: int) -> None:
+    def insert_neighbor_info(self,
+                             from_node: int,
+                             neighbor_info: mesh_pb2.NeighborInfo,
+                             rx_time: int) -> None:
         """Inserts Meshtastic NeighborInfo packet data into DB."""
         upsert_sql = """INSERT INTO neighbor_info
                         (id, neighbor_id, snr, update_time)
@@ -225,10 +215,16 @@ class DbFunctions:
                 self.conn.commit()
                 self.logger.debug("Upserted Neighbor Info")
         except psycopg2.Error as e:
-            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}"
+            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: \
+                {str(e).rstrip()}"
             self.logger.exception(err)
 
-    def insert_text_message(self, from_node, to_node, packet_id, rx_time, body) -> None:
+    def insert_text_message(self,
+                            from_node: int,
+                            to_node: int,
+                            packet_id: int,
+                            rx_time: int,
+                            body: str) -> None: # noqa: R0913 R0917
         """Inserts meshtastic text messages into db."""
         insert_sql = """INSERT INTO text_messages (source_id, destination_id, packet_id, toi, body )
                         VALUES ( %s, %s, %s, to_timestamp(%s), %s);"""
@@ -238,7 +234,8 @@ class DbFunctions:
                 self.conn.commit()
                 self.logger.debug("Inserted text message")
         except psycopg2.Error as e:
-            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}"
+            err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: \
+                {str(e).rstrip()}"
             self.logger.exception(err)
 
     def insert_telemetry(self, from_node, packet_id, rx_time, telem) -> None:
@@ -279,5 +276,6 @@ class DbFunctions:
                     self.conn.commit()
                     self.logger.debug("Inserted telemetry")
             except psycopg2.Error as e:
-                err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: {str(e).rstrip()}"
+                err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: \
+                    {str(e).rstrip()}"
                 self.logger.exception(err)
