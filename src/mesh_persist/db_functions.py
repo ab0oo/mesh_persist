@@ -17,6 +17,7 @@ from meshtastic import config_pb2, mesh_pb2, mqtt_pb2, portnums_pb2
 
 from .config_load import load_config
 
+
 def hex_to_id(node_id: str) -> int:
     """Converts a Meshtastic string node_id to a hex int."""
     n = node_id.replace("!", "0x")
@@ -97,7 +98,13 @@ class DbFunctions:
                 )
                 # commit the changes to the database
                 self.conn.commit()
+        except psycopg2.errors.UniqueViolation as u:
+            self.conn.rollback()
+            err = f"{type(u).__module__.removesuffix('.errors')}:{type(u).__name__}: \
+                {str(u).rstrip()}"
+            self.logger.exception(err)
         except psycopg2.Error as e:
+            self.conn.rollback()
             err = f"{type(e).__module__.removesuffix('.errors')}:{type(e).__name__}: \
                 {str(e).rstrip()}"
             self.logger.exception(err)
@@ -183,10 +190,7 @@ class DbFunctions:
                 {str(e).rstrip()}"
             self.logger.exception(err)
 
-    def insert_neighbor_info(self,
-                             from_node: int,
-                             neighbor_info: mesh_pb2.NeighborInfo,
-                             rx_time: int) -> None:
+    def insert_neighbor_info(self, from_node: int, neighbor_info: mesh_pb2.NeighborInfo, rx_time: int) -> None:
         """Inserts Meshtastic NeighborInfo packet data into DB."""
         upsert_sql = """INSERT INTO neighbor_info
                         (id, neighbor_id, snr, update_time)
@@ -219,12 +223,7 @@ class DbFunctions:
                 {str(e).rstrip()}"
             self.logger.exception(err)
 
-    def insert_text_message(self,
-                            from_node: int,
-                            to_node: int,
-                            packet_id: int,
-                            rx_time: int,
-                            body: str) -> None: # noqa: R0913 R0917
+    def insert_text_message(self, from_node: int, to_node: int, packet_id: int, rx_time: int, body: str) -> None:
         """Inserts meshtastic text messages into db."""
         insert_sql = """INSERT INTO text_messages (source_id, destination_id, packet_id, toi, body )
                         VALUES ( %s, %s, %s, to_timestamp(%s), %s);"""

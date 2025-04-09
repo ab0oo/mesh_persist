@@ -20,29 +20,32 @@ from typing import Any, ClassVar
 
 import paho
 import paho.mqtt.client as mqtt
+from Crypto.Cipher import AES
 from google.protobuf.message import DecodeError
 from meshtastic import mesh_pb2, mqtt_pb2, portnums_pb2, protocols
 
-from .config_load import load_config
 from . import db_functions
+from .config_load import load_config
+
 
 class MeshPersist:
     """Main class for the meshtastic MQTT->DB gateway."""
 
+    key = bytearray([0xD4, 0xF1, 0xBB, 0x3A, 0x20, 0x29, 0x07, 0x59, 0xF0, 0xBC, 0xFF, 0xAB, 0xCF, 0x4E, 0x69, 0x01])
+    MIN_MSG_LEN = 10
     msg_queue: ClassVar[list[Any]] = []
 
     def __init__(self) -> None:
         """Initialization function for MeshPersist."""
         self.last_msg: dict[int, int] = {}
         self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.INFO)
         ch = logging.StreamHandler(sys.stdout)
         ch.setLevel(logging.DEBUG)
         formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
         self.db = db_functions.DbFunctions(self.logger)
-
 
     def on_message(  # noqa: C901  PLR0911 PLR0912 PLR0915
         self,
@@ -52,6 +55,9 @@ class MeshPersist:
         properties=None,
     ) -> None:
         """Callback function when message received from MQTT server."""
+        if len(message.payload) < self.MIN_MSG_LEN:
+            return
+
         service_envelope = mqtt_pb2.ServiceEnvelope()
         if service_envelope is not None:
             try:
@@ -61,26 +67,31 @@ class MeshPersist:
                 return
         else:
             return
-
         msg_pkt = service_envelope.packet
-        portnum = msg_pkt.decoded.portnum
         toi = msg_pkt.rx_time
         pkt_id = msg_pkt.id
         gateway_id = service_envelope.gateway_id
         source = getattr(msg_pkt, "from")
+        dest = msg_pkt.to
+        if msg_pkt.encrypted is not None and len(msg_pkt.encrypted) >= self.MIN_MSG_LEN:
+            nonce = pkt_id.to_bytes(8, "little") + source.to_bytes(7, "little")
+            decrypt_cipher = AES.new(self.key, AES.MODE_CTR, nonce=bytearray(nonce))
+            plain_text = decrypt_cipher.decrypt(bytearray(msg_pkt.encrypted))
+            data = mesh_pb2.Data()
+            data.ParseFromString(plain_text)
+            msg_pkt.decoded.CopyFrom(data)
         # we don't care to store map_report msgs, because they are locally generated and
         # will violate the unique key of the mesh_packets table.  We'll deal with them
         # separately
+        portnum = msg_pkt.decoded.portnum
+        portname = portnums_pb2.PortNum.Name(portnum)
         if portnums_pb2.PortNum.Name(portnum) != "MAP_REPORT_APP":
             self.db.insert_mesh_packet(service_envelope=service_envelope)
-            logline = "Portnum " + str(portnum) + " from GW " + str(gateway_id)
-            self.logger.debug(logline)
+            logline = str(portname) + " from GW " + str(gateway_id) + " source " + str(source) + "->" + str(dest)
+            self.logger.info(logline)
         if source in self.last_msg and self.last_msg[source] == pkt_id:
-            self.logger.debug("dupe")
             return
-        dest = msg_pkt.to
         self.last_msg[source] = pkt_id
-
         handler = protocols.get(msg_pkt.decoded.portnum)
         if isinstance(handler, (str, type(None))) or handler is None:
             return
@@ -92,13 +103,16 @@ class MeshPersist:
                 self.logger.exception("Unable to parse Service Envelope")
                 return
         dbg = (
-            db_functions.id_to_hex(source)
+            "Received from: "
+            + gateway_id
+            + ":  "
+            + db_functions.id_to_hex(source)
             + "->"
             + db_functions.id_to_hex(dest)
             + ":  "
             + portnums_pb2.PortNum.Name(portnum)
         )
-        self.logger.info(dbg)
+        self.logger.debug(dbg)
 
         self.msg_queue.append(msg_pkt)
 
@@ -122,11 +136,7 @@ class MeshPersist:
                     self.db.insert_neighbor_info(from_node=source, neighbor_info=pb, rx_time=toi)
 
                 if msg_pkt.decoded.portnum == portnums_pb2.TELEMETRY_APP:
-                    self.db.insert_telemetry(from_node=source,
-                                             packet_id=pkt_id,
-                                             rx_time=toi,
-                                             telem=pb
-                                             )
+                    self.db.insert_telemetry(from_node=source, packet_id=pkt_id, rx_time=toi, telem=pb)
 
                 if msg_pkt.decoded.portnum == portnums_pb2.ROUTING_APP:
                     route = mesh_pb2.Routing()
@@ -135,11 +145,8 @@ class MeshPersist:
 
                 if msg_pkt.decoded.portnum == portnums_pb2.TEXT_MESSAGE_APP:
                     text_message = msg_pkt.decoded.payload.decode("utf-8")
-                    self.db.insert_text_message(from_node=source,
-                                                to_node=dest,
-                                                packet_id=pkt_id,
-                                                rx_time=toi,
-                                                body=text_message
+                    self.db.insert_text_message(
+                        from_node=source, to_node=dest, packet_id=pkt_id, rx_time=toi, body=text_message
                     )
 
                 if msg_pkt.decoded.portnum == portnums_pb2.MAP_REPORT_APP:
@@ -192,11 +199,9 @@ class MeshPersist:
         self.db = db_functions.DbFunctions(self.logger)
 
         self.logger.debug("Initializing MQTT connection")
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
-                             transport="tcp",
-                             protocol=mqtt.MQTTv311,
-                             clean_session=True
-                             )
+        client = mqtt.Client(
+            mqtt.CallbackAPIVersion.VERSION2, transport="tcp", protocol=mqtt.MQTTv311, clean_session=True
+        )
         client.username_pw_set(broker_user, broker_pass)
         client.user_data_set(mqtt_config)
         client.on_message = self.on_message
@@ -210,5 +215,8 @@ class MeshPersist:
 
 def main() -> None:
     """Main entry point."""
-    mp = MeshPersist()
-    mp.main()
+    try:
+        mp = MeshPersist()
+        mp.main()
+    except KeyboardInterrupt:
+        mp.logger.info("Exiting on user request")

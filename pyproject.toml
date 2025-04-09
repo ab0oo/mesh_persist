@@ -11,10 +11,11 @@ authors = [
 ]
 description = "python to read meshtastic packets from MQTT and persist to PostgreSQL"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dynamic = ["version"]
 dependencies = [
     "configparser",
+    "pycryptodome",
     "meshtastic>=2.6.0",
     "paho_mqtt",
     "psycopg2",

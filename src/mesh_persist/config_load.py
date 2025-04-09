@@ -3,8 +3,9 @@
 This module contains the config file loading functions
 """
 
-from configparser import ConfigParser
 import sys
+from configparser import ConfigParser
+
 
 def load_config(filename: str, section: str) -> dict:
     """Reads configfile configuration for mesh_persist components."""
@@ -18,8 +19,6 @@ def load_config(filename: str, section: str) -> dict:
         for param in params:
             config[param[0]] = param[1]
     else:
-        err = f"Section {section} not found in the {filename} file"
-        print(err)
         sys.exit(1)
 
     return config
