@@ -31,7 +31,8 @@ from .config_load import load_config
 class MeshPersist:
     """Main class for the meshtastic MQTT->DB gateway."""
 
-    key = bytearray([0xD4, 0xF1, 0xBB, 0x3A, 0x20, 0x29, 0x07, 0x59, 0xF0, 0xBC, 0xFF, 0xAB, 0xCF, 0x4E, 0x69, 0x01])
+    key = bytearray([0xD4, 0xF1, 0xBB, 0x3A, 0x20, 0x29, 0x07, 0x59,
+                     0xF0, 0xBC, 0xFF, 0xAB, 0xCF, 0x4E, 0x69, 0x01])
     MIN_MSG_LEN = 10
     msg_queue: ClassVar[list[Any]] = []
 
@@ -87,7 +88,13 @@ class MeshPersist:
         portname = portnums_pb2.PortNum.Name(portnum)
         if portnums_pb2.PortNum.Name(portnum) != "MAP_REPORT_APP":
             self.db.insert_mesh_packet(service_envelope=service_envelope)
-            logline = str(portname) + " from GW " + str(gateway_id) + " source " + str(source) + "->" + str(dest)
+            logline = str(portname) \
+                + " from GW " \
+                + str(gateway_id) \
+                + " source " \
+                + str(source) + \
+                "->" \
+                + str(dest)
             self.logger.info(logline)
         if source in self.last_msg and self.last_msg[source] == pkt_id:
             return
@@ -136,7 +143,11 @@ class MeshPersist:
                     self.db.insert_neighbor_info(from_node=source, neighbor_info=pb, rx_time=toi)
 
                 if msg_pkt.decoded.portnum == portnums_pb2.TELEMETRY_APP:
-                    self.db.insert_telemetry(from_node=source, packet_id=pkt_id, rx_time=toi, telem=pb)
+                    self.db.insert_telemetry(
+                        from_node=source,
+                        packet_id=pkt_id,
+                        rx_time=toi,
+                        telem=pb)
 
                 if msg_pkt.decoded.portnum == portnums_pb2.ROUTING_APP:
                     route = mesh_pb2.Routing()
@@ -146,7 +157,10 @@ class MeshPersist:
                 if msg_pkt.decoded.portnum == portnums_pb2.TEXT_MESSAGE_APP:
                     text_message = msg_pkt.decoded.payload.decode("utf-8")
                     self.db.insert_text_message(
-                        from_node=source, to_node=dest, packet_id=pkt_id, rx_time=toi, body=text_message
+                        from_node=source,
+                        to_node=dest,
+                        packet_id=pkt_id, rx_time=toi,
+                        body=text_message
                     )
 
                 if msg_pkt.decoded.portnum == portnums_pb2.MAP_REPORT_APP:
@@ -200,7 +214,8 @@ class MeshPersist:
 
         self.logger.debug("Initializing MQTT connection")
         client = mqtt.Client(
-            mqtt.CallbackAPIVersion.VERSION2, transport="tcp", protocol=mqtt.MQTTv311, clean_session=True
+            mqtt.CallbackAPIVersion.VERSION2, transport="tcp",
+            protocol=mqtt.MQTTv311, clean_session=True
         )
         client.username_pw_set(broker_user, broker_pass)
         client.user_data_set(mqtt_config)
