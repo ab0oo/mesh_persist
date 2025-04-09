@@ -1,7 +1,7 @@
 # mesh_persist
 Persistence tools for Meshtastic/MQTT integration
 
-This is a set of tools anc configurations that will allow you to pull data from any Meshtastic MQTT feed
+This is a set of tools anf configurations that will allow you to pull data from any Meshtastic MQTT feed
 and persist that data to a well-structured relational database for further analysis.  It is relatively
 easy to set up and uses standard PyPI python libraries.
 It can be run on a Raspberry Pi to provide a complete, local/disconnected information system.  Instructions can be found in [raspi_build.md](raspi_build.md)
