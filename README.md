@@ -53,5 +53,5 @@ pass=large4cats
 topic=msh/#
 ```
 For finer control over the stream, use the apprpriate country code, state, and region code for your area, i.e.:
-`topic=msh/US/CA/SacValley`
+`topic=msh/US/CA/SacValley/#`
 
