@@ -19,23 +19,25 @@ n.b. you will need the postgresql dev package installed to build psycopg.  On De
 To run in development mode, straight from the src tree, use `python3 -m src.main` from the root of the project.
 
 This project assumes you have a working Postgresql database set up on a reachable host, and have installed the PostGIS
-Spatial Reference addons.  Begin by creating a pair of new users, mesh_ro and mesh_rw, and remember their passwords.
+Spatial Reference addons.  Begin by creating a pair of new users, $ro_user and $rw_user, and remember their passwords.
 ```
 export db_host="localhost" # put the hostname of your Postgres server here
 export db_port="5432" # this is the default postgres port
+export ro_user="mesh_ro"
+export rw_user="mesh_rw"
 export rw_pw=$( date | md5sum | head -c 12)
 sleep 2
 export ro_pw=$( date | md5sum | head -c 12)
 touch ~/.pgpass
 chmod 600 ~/.pgpass
-echo "$db_host:$db_port:meshtastic:mesh_ro:$ro_pw" >> ~/.pgpass
-echo "$db_host:$db_port:meshtastic:mesh_rw:$rw_pw" >> ~/.pgpass
-sudo -u postgres createuser -s -d -l mesh_rw
-sudo -u postgres psql -c "alter user mesh_rw with password '${rw_pw}'"
-sudo -u postgres createuser -s -d -l mesh_ro
-sudo -u postgres psql -c "alter user mesh_ro with password '${ro_pw}'"
-PGPASSWORD=${rw_pw} createdb -h $db_host -p $db_port -U mesh_rw meshtastic
-PGPASSWORD=${rw_pw} psql -h ${db_host} -p ${db_port} -U mesh_rw meshtastic -f db/meshtastic.sql
+echo "$db_host:$db_port:meshtastic:$ro_user:$ro_pw" >> ~/.pgpass
+echo "$db_host:$db_port:meshtastic:$rw_user:$rw_pw" >> ~/.pgpass
+sudo -u postgres createuser -s -d -l $rw_user
+sudo -u postgres psql -c "alter user $rw_user with password '${rw_pw}'"
+sudo -u postgres createuser -s -d -l $ro_user
+sudo -u postgres psql -c "alter user $ro_user with password '${ro_pw}'"
+PGPASSWORD=${rw_pw} createdb -h $db_host -p $db_port -U $rw_user meshtastic
+PGPASSWORD=${rw_pw} psql -h ${db_host} -p ${db_port} -U $rw_user meshtastic -f db/meshtastic.sql
 sed "s/PG_PASSWORD/${pg_rw}/g" mesh_persist.ini.template > mesh_persist.ini
 sed -i "s/PG_HOST/${db_host}/g" mesh_persist.ini
 sed -i "s/PG_PORT/${db_port}/g" mesh_persist.ini
