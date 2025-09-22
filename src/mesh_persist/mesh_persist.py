@@ -14,7 +14,9 @@ persists specific types of messages to the database.
 # pylint: disable=W0613
 # pylint: disable=W0718
 
+import json
 import logging
+import pickle
 import sys
 from typing import Any, ClassVar
 
@@ -27,14 +29,24 @@ from meshtastic import mesh_pb2, mqtt_pb2, portnums_pb2, protocols
 from . import db_functions
 from .config_load import load_config
 
+class DictToObject:
+    def __init__(self, dictionary: dict) -> Any:
+        for key,value in dictionary.items():
+            if isinstance(value, dict):
+                setattr(self, key, DictToObject(value))  # Recursively handle nested dictionaries
+            elif isinstance(value, list):
+                # Handle lists containing dictionaries or other types
+                setattr(self, key, [DictToObject(item) if isinstance(item, dict) else item for item in value])
+            else:
+                setattr(self, key, value)   
 
 class MeshPersist:
     """Main class for the meshtastic MQTT->DB gateway."""
 
-    key = bytearray([0xD4, 0xF1, 0xBB, 0x3A, 0x20, 0x29, 0x07, 0x59,
-                     0xF0, 0xBC, 0xFF, 0xAB, 0xCF, 0x4E, 0x69, 0x01])
+    key = bytearray([0xD4, 0xF1, 0xBB, 0x3A, 0x20, 0x29, 0x07, 0x59, 0xF0, 0xBC, 0xFF, 0xAB, 0xCF, 0x4E, 0x69, 0x01])
     MIN_MSG_LEN = 10
     msg_queue: ClassVar[list[Any]] = []
+    debug = False
 
     def __init__(self) -> None:
         """Initialization function for MeshPersist."""
@@ -42,11 +54,21 @@ class MeshPersist:
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
         ch = logging.StreamHandler(sys.stdout)
-        ch.setLevel(logging.DEBUG)
+        ch.setLevel(logging.INFO)
         formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
         self.db = db_functions.DbFunctions(self.logger)
+
+    def is_json(self, teststr) -> bool:
+        """Tests to see if teststr is a json object."""
+        try:
+            j = json.loads(teststr)
+            self.logger.debug(json.dumps(j, indent=4))
+        except ValueError:
+            return False
+        return True
+
 
     def on_message(  # noqa: C901  PLR0911 PLR0912 PLR0915
         self,
@@ -58,13 +80,19 @@ class MeshPersist:
         """Callback function when message received from MQTT server."""
         if len(message.payload) < self.MIN_MSG_LEN:
             return
-
+        if self.is_json(message.payload):
+            self.logger.debug("Got a JSON payload")
+#            message.payload = pickle.dumps(DictToObject(json.loads(message.payload)))
+            return
+        self.logger.debug("==================================================")
+        self.logger.debug(str(message.payload))
         service_envelope = mqtt_pb2.ServiceEnvelope()
         if service_envelope is not None:
             try:
                 service_envelope.ParseFromString(message.payload)
-            except DecodeError:
-                self.logger.exception("Exception in initial Service Envelope decode")
+            except Exception as e:
+                estr = f"Exception in initial Service Envelope decode: {e}\n{message.payload!r}"
+                self.logger.exception(estr)
                 return
         else:
             return
@@ -74,27 +102,27 @@ class MeshPersist:
         gateway_id = service_envelope.gateway_id
         source = getattr(msg_pkt, "from")
         dest = msg_pkt.to
+        relay_node = msg_pkt.relay_node
         if msg_pkt.encrypted is not None and len(msg_pkt.encrypted) >= self.MIN_MSG_LEN:
             nonce = pkt_id.to_bytes(8, "little") + source.to_bytes(7, "little")
             decrypt_cipher = AES.new(self.key, AES.MODE_CTR, nonce=bytearray(nonce))
             plain_text = decrypt_cipher.decrypt(bytearray(msg_pkt.encrypted))
             data = mesh_pb2.Data()
-            data.ParseFromString(plain_text)
+            try:
+                data.ParseFromString(plain_text)
+            except Exception as e:
+                estr = f"Error parsing plain text: {e}\n{plain_text!r}"
+                self.logger.exception(estr)
+                return
             msg_pkt.decoded.CopyFrom(data)
         # we don't care to store map_report msgs, because they are locally generated and
         # will violate the unique key of the mesh_packets table.  We'll deal with them
         # separately
         portnum = msg_pkt.decoded.portnum
         portname = portnums_pb2.PortNum.Name(portnum)
-        if portnums_pb2.PortNum.Name(portnum) != "MAP_REPORT_APP":
+        if portnums_pb2.PortNum.Name(portnum) != "MAP_REPORT_APP" and not self.debug:
             self.db.insert_mesh_packet(service_envelope=service_envelope)
-            logline = str(portname) \
-                + " from GW " \
-                + str(gateway_id) \
-                + " source " \
-                + str(source) + \
-                "->" \
-                + str(dest)
+            logline = "on " + message.topic +": "+str(portname) + " from GW " + str(gateway_id) + " source " + str(source) + "->" + str(dest)
             self.logger.info(logline)
         if source in self.last_msg and self.last_msg[source] == pkt_id:
             return
@@ -118,12 +146,14 @@ class MeshPersist:
             + db_functions.id_to_hex(dest)
             + ":  "
             + portnums_pb2.PortNum.Name(portnum)
+            + " relayed by "
+            + str(hex(relay_node))
         )
         self.logger.debug(dbg)
 
         self.msg_queue.append(msg_pkt)
 
-        if not self.db.test_connection():
+        if not self.db.test_connection() or self.debug:
             return
 
         while len(self.msg_queue) > 0:
@@ -143,11 +173,7 @@ class MeshPersist:
                     self.db.insert_neighbor_info(from_node=source, neighbor_info=pb, rx_time=toi)
 
                 if msg_pkt.decoded.portnum == portnums_pb2.TELEMETRY_APP:
-                    self.db.insert_telemetry(
-                        from_node=source,
-                        packet_id=pkt_id,
-                        rx_time=toi,
-                        telem=pb)
+                    self.db.insert_telemetry(from_node=source, packet_id=pkt_id, rx_time=toi, telem=pb)
 
                 if msg_pkt.decoded.portnum == portnums_pb2.ROUTING_APP:
                     route = mesh_pb2.Routing()
@@ -157,10 +183,7 @@ class MeshPersist:
                 if msg_pkt.decoded.portnum == portnums_pb2.TEXT_MESSAGE_APP:
                     text_message = msg_pkt.decoded.payload.decode("utf-8")
                     self.db.insert_text_message(
-                        from_node=source,
-                        to_node=dest,
-                        packet_id=pkt_id, rx_time=toi,
-                        body=text_message
+                        from_node=source, to_node=dest, packet_id=pkt_id, rx_time=toi, body=text_message
                     )
 
                 if msg_pkt.decoded.portnum == portnums_pb2.MAP_REPORT_APP:
@@ -180,10 +203,14 @@ class MeshPersist:
     ) -> None:
         """Callback function on connection to MQTT server."""
         config = client.user_data_get()
-        topic = config.get("topic")
+        topic = config.get("topics")
         log_msg = f"Connected, subscribing to {topic}..."
         self.logger.info(log_msg)
-        client.subscribe(config.get("topic"))
+        topics = config.get("topics").split(',')
+        for topic in topics:
+            msg = f"Subscribing to {topic}"
+            self.logger.debug(msg)
+            client.subscribe(topic)
 
     def on_subscribe(
         self,
@@ -214,8 +241,7 @@ class MeshPersist:
 
         self.logger.debug("Initializing MQTT connection")
         client = mqtt.Client(
-            mqtt.CallbackAPIVersion.VERSION2, transport="tcp",
-            protocol=mqtt.MQTTv311, clean_session=True
+            mqtt.CallbackAPIVersion.VERSION2, transport="tcp", protocol=mqtt.MQTTv311, clean_session=True
         )
         client.username_pw_set(broker_user, broker_pass)
         client.user_data_set(mqtt_config)
