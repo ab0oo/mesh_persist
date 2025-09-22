@@ -16,7 +16,6 @@ persists specific types of messages to the database.
 
 import json
 import logging
-import pickle
 import sys
 from typing import Any, ClassVar
 
@@ -29,16 +28,6 @@ from meshtastic import mesh_pb2, mqtt_pb2, portnums_pb2, protocols
 from . import db_functions
 from .config_load import load_config
 
-class DictToObject:
-    def __init__(self, dictionary: dict) -> Any:
-        for key,value in dictionary.items():
-            if isinstance(value, dict):
-                setattr(self, key, DictToObject(value))  # Recursively handle nested dictionaries
-            elif isinstance(value, list):
-                # Handle lists containing dictionaries or other types
-                setattr(self, key, [DictToObject(item) if isinstance(item, dict) else item for item in value])
-            else:
-                setattr(self, key, value)   
 
 class MeshPersist:
     """Main class for the meshtastic MQTT->DB gateway."""
@@ -69,7 +58,6 @@ class MeshPersist:
             return False
         return True
 
-
     def on_message(  # noqa: C901  PLR0911 PLR0912 PLR0915
         self,
         client: paho.mqtt.client.Client,
@@ -82,7 +70,7 @@ class MeshPersist:
             return
         if self.is_json(message.payload):
             self.logger.debug("Got a JSON payload")
-#            message.payload = pickle.dumps(DictToObject(json.loads(message.payload)))
+            #            message.payload = pickle.dumps(DictToObject(json.loads(message.payload)))
             return
         self.logger.debug("==================================================")
         self.logger.debug(str(message.payload))
@@ -122,7 +110,18 @@ class MeshPersist:
         portname = portnums_pb2.PortNum.Name(portnum)
         if portnums_pb2.PortNum.Name(portnum) != "MAP_REPORT_APP" and not self.debug:
             self.db.insert_mesh_packet(service_envelope=service_envelope)
-            logline = "on " + message.topic +": "+str(portname) + " from GW " + str(gateway_id) + " source " + str(source) + "->" + str(dest)
+            logline = (
+                "on "
+                + message.topic
+                + ": "
+                + str(portname)
+                + " from GW "
+                + str(gateway_id)
+                + " source "
+                + str(source)
+                + "->"
+                + str(dest)
+            )
             self.logger.info(logline)
         if source in self.last_msg and self.last_msg[source] == pkt_id:
             return
@@ -206,7 +205,7 @@ class MeshPersist:
         topic = config.get("topics")
         log_msg = f"Connected, subscribing to {topic}..."
         self.logger.info(log_msg)
-        topics = config.get("topics").split(',')
+        topics = config.get("topics").split(",")
         for topic in topics:
             msg = f"Subscribing to {topic}"
             self.logger.debug(msg)
