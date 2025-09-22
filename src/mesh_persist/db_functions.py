@@ -13,8 +13,8 @@ import sys
 import time
 
 import psycopg2
-import psycopg2.errors
 from meshtastic import config_pb2, mesh_pb2, mqtt_pb2, portnums_pb2
+from psycopg2 import errors
 
 from .config_load import load_config
 
@@ -99,7 +99,7 @@ class DbFunctions:
                 )
                 # commit the changes to the database
                 self.conn.commit()
-        except psycopg2.errors.UniqueViolation as u:
+        except errors.UniqueViolation as u:
             self.conn.rollback()
             err = f"{type(u).__module__.removesuffix('.errors')}:{type(u).__name__}: \
                 {str(u).rstrip()}"
@@ -191,7 +191,10 @@ class DbFunctions:
                 {str(e).rstrip()}"
             self.logger.exception(err)
 
-    def insert_neighbor_info(self, from_node: int, neighbor_info: mesh_pb2.NeighborInfo, rx_time: int) -> None:
+    def insert_neighbor_info(self,
+                             from_node: int,
+                             neighbor_info: mesh_pb2.NeighborInfo,
+                             rx_time: int) -> None:
         """Inserts Meshtastic NeighborInfo packet data into DB."""
         upsert_sql = """INSERT INTO neighbor_info
                         (id, neighbor_id, snr, update_time)
@@ -224,7 +227,12 @@ class DbFunctions:
                 {str(e).rstrip()}"
             self.logger.exception(err)
 
-    def insert_text_message(self, from_node: int, to_node: int, packet_id: int, rx_time: int, body: str) -> None:
+    def insert_text_message(self,
+                            from_node: int,
+                            to_node: int,
+                            packet_id: int,
+                            rx_time: int,
+                            body: str) -> None:
         """Inserts meshtastic text messages into db."""
         insert_sql = """INSERT INTO text_messages (source_id, destination_id, packet_id, toi, body )
                         VALUES ( %s, %s, %s, to_timestamp(%s), %s);"""
