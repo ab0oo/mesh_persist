@@ -21,13 +21,15 @@ from .config_load import load_config
 
 def hex_to_id(node_id: str) -> int:
     """Converts a Meshtastic string node_id to a hex int."""
-    n = node_id.replace("!", "0x")
-    return int(n, 0)
+    if "!" in node_id:
+        n = node_id.replace("!", "0x")
+        return int(n, 0)
+    return int(node_id, 0)
 
 
 def id_to_hex(node_id: int) -> str:
     """Converts a hex node_id to a Meshtastic-style node address."""
-    return "!" + hex(node_id)[2:]
+    return "!" + f"{node_id:x}"
 
 
 def connect(config: dict):  # noqa: ANN201
@@ -65,6 +67,7 @@ class DbFunctions:
         mp = service_envelope.packet
         pn = mp.decoded.portnum
         portnum = portnums_pb2.PortNum.Name(pn)
+        gw = service_envelope.gateway_id
 
         sql = """INSERT INTO mesh_packets (source, dest, packet_id, channel, rx_snr, rx_rssi,
                 hop_limit, hop_start, portnum, toi, channel_id, gateway_id )
@@ -79,6 +82,8 @@ class DbFunctions:
                     mp.hop_limit = 0
                 if not mp.rx_time:
                     mp.rx_time = int(time.time())
+                if not gw:
+                    gw = "!FFFF"
                 # execute the INSERT statement
                 cur.execute(
                     sql,
@@ -94,7 +99,7 @@ class DbFunctions:
                         portnum,
                         mp.rx_time,
                         service_envelope.channel_id,
-                        hex_to_id(service_envelope.gateway_id),
+                        hex_to_id(gw),
                     ),
                 )
                 # commit the changes to the database
@@ -124,8 +129,16 @@ class DbFunctions:
                         AND node_infos.node_id = %s"""
         try:
             with self.conn.cursor() as cur:
-                role = config_pb2.Config.DeviceConfig.Role.Name(nodeinfo.role)
-                hw = mesh_pb2.HardwareModel.Name(nodeinfo.hw_model)
+                role = "UNKNONW"
+                try:
+                    role = config_pb2.Config.DeviceConfig.Role.Name(nodeinfo.role)
+                except ValueError:
+                    role = "UNKNOWN"
+                hw = "UNKNONW"
+                try:
+                    hw = mesh_pb2.HardwareModel.Name(nodeinfo.hw_model)
+                except ValueError:
+                    hw = "UNKNONW"
                 cur.execute(
                     upsert_sql,
                     (
@@ -191,10 +204,7 @@ class DbFunctions:
                 {str(e).rstrip()}"
             self.logger.exception(err)
 
-    def insert_neighbor_info(self,
-                             from_node: int,
-                             neighbor_info: mesh_pb2.NeighborInfo,
-                             rx_time: int) -> None:
+    def insert_neighbor_info(self, from_node: int, neighbor_info: mesh_pb2.NeighborInfo, rx_time: int) -> None:
         """Inserts Meshtastic NeighborInfo packet data into DB."""
         upsert_sql = """INSERT INTO neighbor_info
                         (id, neighbor_id, snr, update_time)
@@ -227,12 +237,7 @@ class DbFunctions:
                 {str(e).rstrip()}"
             self.logger.exception(err)
 
-    def insert_text_message(self,
-                            from_node: int,
-                            to_node: int,
-                            packet_id: int,
-                            rx_time: int,
-                            body: str) -> None:
+    def insert_text_message(self, from_node: int, to_node: int, packet_id: int, rx_time: int, body: str) -> None:
         """Inserts meshtastic text messages into db."""
         insert_sql = """INSERT INTO text_messages (source_id, destination_id, packet_id, toi, body )
                         VALUES ( %s, %s, %s, to_timestamp(%s), %s);"""
